@@ -70,12 +70,12 @@ The system prioritizes **reliability, explainability, and cost efficiency**.
 
 The repository is organized to enforce clear separation of concerns and long-term maintainability:
 
-src/Contracts → Versioned, immutable contracts (never break)
-src/FunctionApp → Azure Functions with agent-oriented business logic
-logicapp/ → Workflow orchestration (Azure Logic Apps)
-database/ → SQL schema (append-only, auditable)
-docs/ → Architecture, design decisions, and demo material
-samples/ → Sample input data for demo and testing
+- **src/Contracts → Versioned, immutable contracts (never break)**
+- **src/FunctionApp → Azure Functions with agent-oriented business logic**
+- **logicapp/ → Workflow orchestration (Azure Logic Apps)**
+- **database/ → SQL schema (append-only, auditable)**
+- **docs/ → Architecture, design decisions, and demo material**
+- **samples/ → Sample input data for demo and testing**
 
 
 Each layer has a single responsibility, making the system easier to evolve without architectural rewrites.
