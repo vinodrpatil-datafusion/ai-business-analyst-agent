@@ -1,82 +1,130 @@
-# AI Business Analyst Agent for SMEs
+#  AI Business Analyst Agent for SMEs
 
-🚀 Built for **Microsoft AI Dev Days Hackathon 2026**
+🚀 Built for **Microsoft AI Dev Days Global Hackathon 2026**
 
 ---
 
 ## Overview
 
-Small and medium-sized businesses (SMEs) generate large amounts of data in Excel and CSV files, but often lack the expertise or time to convert this data into actionable insights. Traditional dashboards show metrics, but rarely answer the critical question: **“What should I do next?”**
+Small and medium-sized businesses (SMEs) generate large volumes of data in Excel and CSV files but often lack the time, tools, or expertise to turn that data into actionable decisions. Traditional dashboards show metrics, but rarely answer the most important question:
 
-This project introduces an **AI Business Analyst Agent** that autonomously analyzes structured business data and produces executive-level insights, risks, opportunities, and recommended actions in clear, non-technical language.
+> **“What should I do next?”**
 
-The solution acts as a **virtual business analyst**, helping decision-makers take informed actions without complex BI tools or expensive consulting.
+**AI Business Analyst Agent** is a serverless, Azure-native solution that transforms structured business data into **clear, executive-level insights**, including risks, opportunities, and recommended actions — without requiring complex BI tools or technical expertise.
+
+The system acts as a **virtual business analyst**, helping decision-makers move from raw data to informed action quickly and reliably.
 
 ---
 
 ## Core Idea
 
-At the heart of the solution is a **single autonomous AI agent**:
+The solution is built using an **agent-oriented architecture**, where each stage of analysis is handled by a specialized, autonomous component (“agent”), without introducing heavyweight agent frameworks.
 
-### **BusinessAnalystAgent**
-- Interprets summarized business data
-- Identifies trends, risks, and opportunities
-- Generates actionable recommendations
-- Communicates in plain business language
+### Agent Roles
 
-The agent is orchestrated using **Microsoft Agent Framework** and leverages **Azure OpenAI** as its reasoning engine.
+- **Signal Extraction Agent**  
+  Deterministically analyzes raw CSV/Excel data to extract business metrics, trends, and patterns.
+
+- **Insight Reasoning Agent**  
+  Uses **Azure OpenAI** to generate executive summaries, risks, opportunities, and recommendations from structured signals.
+
+- **Orchestration Agent**  
+  Implemented using **Azure Logic Apps**, coordinating execution, retries, and job state.
+
+- **Observation Agent**  
+  Provides read-only job status and insight availability for the UI and demo.
+
+> **Key principle:** Raw data is never sent directly to the LLM.  
+> Deterministic analysis always happens before AI reasoning.
 
 ---
 
-## Key Features (Planned)
+## Key Features
 
 - Upload CSV / Excel business data  
-- Autonomous AI Business Analyst Agent  
-- Executive summary of business performance  
+- Deterministic extraction of business signals  
+- AI-generated executive insights using Azure OpenAI  
 - Identification of key risks and opportunities  
-- Actionable recommendations  
-- Downloadable insight report  
+- Actionable, plain-language recommendations  
+- Real-time job status tracking  
+- Auditable and reproducible outputs  
+
+---
+
+## Architecture Overview
+
+The system prioritizes **reliability, explainability, and cost efficiency**.
+
+### High-Level Flow
+
+1. User uploads a CSV/Excel file via the web UI  
+2. Azure Logic Apps orchestrates the workflow  
+3. Signal Extraction Agent processes data deterministically  
+4. Insight Reasoning Agent generates insights using Azure OpenAI  
+5. Results and job state are stored in Azure SQL  
+6. UI queries job status and displays insights  
 
 ---
 
 ## Technology Stack
 
-- **Microsoft Agent Framework**
-- **Azure OpenAI**
-- Azure App Service
-- Azure Blob Storage
-- Azure SQL Database
-- GitHub, VS Code, GitHub Copilot
+### Microsoft & Azure Services
+
+- **Azure Functions (Consumption)** – serverless compute for agents  
+- **Azure Logic Apps (Consumption)** – orchestration and workflow control  
+- **Azure OpenAI** – AI reasoning and insight generation  
+- **Azure SQL Database** – system of record and audit trail  
+- **Azure Blob Storage** – raw file storage  
+
+### Developer Tooling
+
+- **GitHub** – source control and collaboration  
+- **GitHub Actions** – CI/CD automation  
+- **VS Code** – development environment  
+- **GitHub Copilot** – AI-assisted development  
 
 ---
 
-## Architecture (High-Level)
+## Responsible AI & Enterprise Readiness
 
-1. User uploads business data via a web interface  
-2. Backend performs data profiling and aggregation  
-3. Structured data summary is passed to the BusinessAnalystAgent  
-4. Agent reasons over data using Azure OpenAI  
-5. Insights are generated, stored, and presented to the user  
+- Deterministic preprocessing before AI reasoning  
+- Structured prompts to reduce hallucinations  
+- No raw data sent to the LLM  
+- Immutable storage of signals and insights  
+- Versioned contracts for backward compatibility  
 
-*(Detailed architecture diagram will be added as development progresses.)*
+This design supports **enterprise adoption**, governance, and future SaaS scaling.
 
 ---
 
 ## Hackathon Alignment
 
-This project aligns with the **AI Dev Days Hackathon** requirements by:
-- Using **Microsoft Agent Framework** as a hero technology  
-- Leveraging **Azure services** for deployment  
-- Being developed in a public **GitHub repository**  
-- Using **VS Code** and **GitHub Copilot** during development  
-- Solving a **real-world business problem** with a production-ready approach  
+This project aligns strongly with the **Microsoft AI Dev Days Hackathon** by:
+
+- Demonstrating deep **Azure service integration**
+- Applying **agent-oriented AI design** responsibly
+- Solving a **real-world business problem**
+- Being fully **serverless and production-ready**
+- Maintaining a public **GitHub repository**
+- Using Microsoft developer tooling throughout
+
+**Primary Category Fit:**  
+🏆 **Best Azure Integration**
+
+**Secondary Fit:**  
+🏆 **Best Enterprise Solution**
 
 ---
 
 ## Status
 
-🛠️ **Work in progress**  
-This repository will be incrementally updated during the hackathon with code, architecture diagrams, and deployment instructions.
+🛠️ **Active Development**
+
+This repository will be incrementally updated during the hackathon with:
+- Code implementations
+- Architecture documentation
+- Deployment instructions
+- Demo assets
 
 ---
 
@@ -84,5 +132,5 @@ This repository will be incrementally updated during the hackathon with code, ar
 
 **Vinod Patil**  
 Azure | Data | AI Architect  
-Focused on building practical, production-ready AI solutions for businesses.
 
+Focused on building **practical, production-ready AI systems** that balance intelligence, reliability, and cost efficiency.
