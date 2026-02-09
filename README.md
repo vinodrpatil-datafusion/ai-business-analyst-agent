@@ -1,4 +1,4 @@
-#  AI Business Analyst Agent for SMEs
+# 🧠 AI Business Analyst Agent for SMEs
 
 🚀 Built for **Microsoft AI Dev Days Global Hackathon 2026**
 
@@ -66,6 +66,22 @@ The system prioritizes **reliability, explainability, and cost efficiency**.
 
 ---
 
+## 📁 Repository Structure
+
+The repository is organized to enforce clear separation of concerns and long-term maintainability:
+
+src/Contracts → Versioned, immutable contracts (never break)
+src/FunctionApp → Azure Functions with agent-oriented business logic
+logicapp/ → Workflow orchestration (Azure Logic Apps)
+database/ → SQL schema (append-only, auditable)
+docs/ → Architecture, design decisions, and demo material
+samples/ → Sample input data for demo and testing
+
+
+Each layer has a single responsibility, making the system easier to evolve without architectural rewrites.
+
+---
+
 ## Technology Stack
 
 ### Microsoft & Azure Services
@@ -82,6 +98,42 @@ The system prioritizes **reliability, explainability, and cost efficiency**.
 - **GitHub Actions** – CI/CD automation  
 - **VS Code** – development environment  
 - **GitHub Copilot** – AI-assisted development  
+
+---
+
+## 💰 Cost Model (Startup-Friendly)
+
+The architecture is optimized for early-stage startups:
+
+- Azure Functions & Logic Apps → **zero idle cost**
+- Azure SQL Database used as the system of record
+- Azure OpenAI usage minimized through deterministic preprocessing
+
+Costs scale **linearly with usage**, not with infrastructure size.
+
+---
+
+## 📚 Documentation (Read in This Order)
+
+The following documents explain the system design and decisions progressively:
+
+1. `docs/architecture.md` – Overall system design and execution flow  
+2. `docs/contracts.md` – Contract versioning and backward compatibility strategy  
+3. `docs/decisions.md` – Key architectural trade-offs and rationale  
+4. `docs/responsible-ai.md` – Responsible AI principles, trust, and governance  
+5. `docs/demo-script.md` – 2-minute demo narration for judges  
+
+---
+
+## 🧪 Testing Strategy
+
+The project focuses on **confidence over complexity**:
+
+- Contract safety tests to prevent breaking changes  
+- Deterministic behavior tests for signal extraction  
+- Read-only validation for job status queries  
+
+This ensures reliability without introducing unnecessary test infrastructure.
 
 ---
 
@@ -121,10 +173,10 @@ This project aligns strongly with the **Microsoft AI Dev Days Hackathon** by:
 🛠️ **Active Development**
 
 This repository will be incrementally updated during the hackathon with:
-- Code implementations
-- Architecture documentation
-- Deployment instructions
-- Demo assets
+- Code implementations  
+- Architecture documentation  
+- Deployment instructions  
+- Demo assets  
 
 ---
 
