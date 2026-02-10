@@ -23,7 +23,6 @@
     </None>
   </ItemGroup>
   <ItemGroup>
-    <Folder Include="Agents\" />
     <Folder Include="Functions\" />
     <Folder Include="Persistence\" />
     <Folder Include="Parsing\" />
