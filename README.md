@@ -1,4 +1,4 @@
-# 🧠 AI Business Analyst Agent for SMEs
+# AI Business Analyst Agent for SMEs
 
 🚀 Built for **Microsoft AI Dev Days Global Hackathon 2026**
 
@@ -6,63 +6,63 @@
 
 ## Overview
 
-Small and medium-sized businesses (SMEs) generate large volumes of data in Excel and CSV files but often lack the time, tools, or expertise to turn that data into actionable decisions. Traditional dashboards show metrics, but rarely answer the most important question:
+Small and medium-sized businesses (SMEs) generate large volumes of data in Excel and CSV files but often lack the time, tools, or expertise to convert that data into **clear business decisions**.
+
+Traditional dashboards show metrics — but they rarely answer the most important question:
 
 > **“What should I do next?”**
 
-**AI Business Analyst Agent** is a serverless, Azure-native solution that transforms structured business data into **clear, executive-level insights**, including risks, opportunities, and recommended actions — without requiring complex BI tools or technical expertise.
+**AI Business Analyst Agent** is a **serverless, Azure-native system** that transforms structured business data into **executive-level insights**, risks, opportunities, and recommended actions using **agent-oriented AI design**.
 
-The system acts as a **virtual business analyst**, helping decision-makers move from raw data to informed action quickly and reliably.
+The system behaves like a **virtual business analyst** — reliable, explainable, and cost-efficient.
 
 ---
 
 ## Core Idea
 
-The solution is built using an **agent-oriented architecture**, where each stage of analysis is handled by a specialized, autonomous component (“agent”), without introducing heavyweight agent frameworks.
+The solution uses an **agent-oriented architecture**, where each responsibility is handled by a focused, autonomous agent.
 
 ### Agent Roles
 
 - **Signal Extraction Agent**  
-  Deterministically analyzes raw CSV/Excel data to extract business metrics, trends, and patterns.
+  Deterministically analyzes raw CSV / Excel data and extracts structured business signals.
 
 - **Insight Reasoning Agent**  
-  Uses **Azure OpenAI** to generate executive summaries, risks, opportunities, and recommendations from structured signals.
+  Uses **Azure OpenAI** to convert signals into executive insights, risks, and recommendations.
 
 - **Orchestration Agent**  
-  Implemented using **Azure Logic Apps**, coordinating execution, retries, and job state.
+  Implemented using **Azure Logic Apps**, coordinating execution, retries, and job lifecycle.
 
 - **Observation Agent**  
-  Provides read-only job status and insight availability for the UI and demo.
+  Provides read-only job status and insight availability for UI, orchestration, and demos.
 
-> **Key principle:** Raw data is never sent directly to the LLM.  
-> Deterministic analysis always happens before AI reasoning.
+> **Key principle:**  
+> Raw data is never sent directly to the LLM. Deterministic preprocessing always happens first.
 
 ---
 
 ## Key Features
 
-- Upload CSV / Excel business data  
-- Deterministic extraction of business signals  
-- AI-generated executive insights using Azure OpenAI  
-- Identification of key risks and opportunities  
-- Actionable, plain-language recommendations  
-- Real-time job status tracking  
-- Auditable and reproducible outputs  
+- Blob-first ingestion for scalable file uploads  
+- Deterministic signal extraction  
+- AI-powered business insights using Azure OpenAI  
+- Explicit job lifecycle management  
+- Auditable, reproducible outputs  
+- Cost-efficient, serverless execution  
 
 ---
 
 ## Architecture Overview
 
-The system prioritizes **reliability, explainability, and cost efficiency**.
-
 ### High-Level Flow
 
-1. User uploads a CSV/Excel file via the web UI  
-2. Azure Logic Apps orchestrates the workflow  
-3. Signal Extraction Agent processes data deterministically  
-4. Insight Reasoning Agent generates insights using Azure OpenAI  
-5. Results and job state are stored in Azure SQL  
-6. UI queries job status and displays insights  
+1. User uploads file to **Azure Blob Storage**
+2. Job is submitted with Blob reference
+3. **Azure Functions** execute agents
+4. Signals are extracted deterministically
+5. Insights are generated via Azure OpenAI
+6. Results are stored in **Azure SQL**
+7. Status and insights are queried asynchronously
 
 ---
 
