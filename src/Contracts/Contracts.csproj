@@ -6,10 +6,4 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 	</PropertyGroup>
 
-  <ItemGroup>
-    <Folder Include="Invocation\" />
-    <Folder Include="Insights\" />
-    <Folder Include="Signals\" />
-  </ItemGroup>
-
 </Project>
