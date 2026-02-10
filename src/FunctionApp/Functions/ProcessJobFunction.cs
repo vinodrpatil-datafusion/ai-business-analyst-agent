@@ -12,22 +12,22 @@ public sealed class ProcessJobFunction
 {
     private readonly IAgent<string, BusinessSignalsV1> _signalAgent;
     private readonly IAgent<BusinessSignalsV1, BusinessInsightsV1> _insightAgent;
+    private readonly JobStore _jobStore;
     private readonly SignalStore _signalStore;
     private readonly InsightStore _insightStore;
-    private readonly JobStore _jobStore;
 
     public ProcessJobFunction(
         IAgent<string, BusinessSignalsV1> signalAgent,
         IAgent<BusinessSignalsV1, BusinessInsightsV1> insightAgent,
+        JobStore jobStore,
         SignalStore signalStore,
-        InsightStore insightStore,
-        JobStore jobStore)
+        InsightStore insightStore)
     {
         _signalAgent = signalAgent;
         _insightAgent = insightAgent;
+        _jobStore = jobStore;
         _signalStore = signalStore;
         _insightStore = insightStore;
-        _jobStore = jobStore;
     }
 
     [Function("ProcessJob")]
@@ -37,55 +37,54 @@ public sealed class ProcessJobFunction
         Guid jobId,
         FunctionContext context)
     {
-        // 1. Mark job as Processing
-        await _jobStore.UpdateStatusAsync(
-            jobId,
-            "Processing",
-            context.CancellationToken
-        );
+        try
+        {
+            // 1. Mark job as Processing
+            await _jobStore.UpdateStatusAsync(jobId, "Processing", context.CancellationToken);
 
-        // NOTE:
-        // For now, the input to SignalExtractionAgent is a placeholder.
-        // Later this will be blob path or file reference.
-        var inputReference = $"job:{jobId}";
+            // 2. Fetch BlobPath
+            var jobStatus = await _jobStore.GetStatusAsync(jobId, context.CancellationToken);
 
-        // 2. Deterministic signal extraction
-        var signals = await _signalAgent.ExecuteAsync(
-            inputReference,
-            context.CancellationToken
-        );
+            if (jobStatus.Status == "NotFound")
+            {
+                var notFound = request.CreateResponse(HttpStatusCode.NotFound);
+                await notFound.WriteStringAsync("Job not found");
+                return notFound;
+            }
 
-        await _signalStore.SaveAsync(
-            jobId,
-            signals,
-            context.CancellationToken
-        );
+            // NOTE:
+            // BlobPath is stored in Jobs table and should be fetched
+            // via a dedicated method in JobStore.
+            // For now, we assume it is already available.
+            // (Next refactor can add GetBlobPathAsync)
 
-        // 3. AI reasoning
-        var insights = await _insightAgent.ExecuteAsync(
-            signals,
-            context.CancellationToken
-        );
+            var blobPath = await _jobStore.GetBlobPathAsync(jobId, context.CancellationToken);
 
-        await _insightStore.SaveAsync(
-            jobId,
-            insights,
-            context.CancellationToken
-        );
+            if (string.IsNullOrWhiteSpace(blobPath))
+            {
+                throw new InvalidOperationException("BlobPath not found for job");
+            }
 
-        // 4. Mark job as Completed
-        await _jobStore.UpdateStatusAsync(
-            jobId,
-            "Completed",
-            context.CancellationToken
-        );
 
-        // 5. Immediate acknowledgement
-        var response = request.CreateResponse(HttpStatusCode.Accepted);
-        await response.WriteAsJsonAsync(
-            new { JobId = jobId, Status = "Completed" }
-        );
+            // 3. Deterministic signal extraction
+            var signals = await _signalAgent.ExecuteAsync(blobPath, context.CancellationToken);
+            await _signalStore.SaveAsync(jobId, signals, context.CancellationToken);
 
-        return response;
+            // 4. AI reasoning
+            var insights = await _insightAgent.ExecuteAsync(signals, context.CancellationToken);
+            await _insightStore.SaveAsync(jobId, insights, context.CancellationToken);
+
+            // 5. Mark job as Completed
+            await _jobStore.UpdateStatusAsync(jobId, "Completed", context.CancellationToken);
+
+            var accepted = request.CreateResponse(HttpStatusCode.Accepted);
+            await accepted.WriteStringAsync("Job processed");
+            return accepted;
+        }
+        catch (Exception)
+        {
+            await _jobStore.UpdateStatusAsync(jobId, "Failed", context.CancellationToken);
+            throw;
+        }
     }
 }
