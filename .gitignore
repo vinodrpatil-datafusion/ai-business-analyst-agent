@@ -52,3 +52,19 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+
+# Visual Studio
+.vs/
+
+# Azure Functions local settings
+local.settings.json
+launchSettings.json
+
+# Azure tooling artifacts
+serviceDependencies.json
+serviceDependencies.local.json
+
+# Azure Functions / Visual Studio user files
+*.user
+launchSettings.json
+
