@@ -122,4 +122,24 @@ public sealed class JobStore
             InsightsAvailable: reader.GetBoolean(3)
         );
     }
+
+
+    public async Task<string?> GetBlobPathAsync(
+    Guid jobId,
+    CancellationToken cancellationToken)
+    {
+        const string sql = @"
+        SELECT BlobPath
+        FROM Jobs
+        WHERE JobId = @JobId";
+
+        using var conn = new SqlConnection(_connectionString);
+        using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.AddWithValue("@JobId", jobId);
+
+        await conn.OpenAsync(cancellationToken);
+        return (string?)await cmd.ExecuteScalarAsync(cancellationToken);
+    }
+
 }
