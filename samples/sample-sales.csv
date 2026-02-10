@@ -1,0 +1,7 @@
+OrderId,Region,Product,Quantity,Revenue
+1001,EMEA,Widget A,10,2500
+1002,APAC,Widget B,5,1250
+1003,EMEA,Widget A,7,1750
+1004,APAC,Widget C,3,900
+1005,EMEA,Widget B,12,3000
+1006,APAC,Widget A,8,2000

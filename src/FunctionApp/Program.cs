@@ -2,6 +2,7 @@ using Contracts.Insights;
 using Contracts.Invocation;
 using Contracts.Signals;
 using FunctionApp.Agents;
+using FunctionApp.Parsing;
 using FunctionApp.Persistence;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,6 +26,10 @@ namespace FunctionApp
                     services.AddSingleton<IAgent<string, BusinessSignalsV1>, SignalExtractionAgent>();
                     services.AddSingleton<IAgent<BusinessSignalsV1, BusinessInsightsV1>, InsightReasoningAgent>();
                     services.AddSingleton<IAgent<Guid, JobStatusResponseV1>, JobStatusQueryAgent>();
+
+                    services.AddSingleton(sp =>
+                        new BlobFileReader(
+                            Environment.GetEnvironmentVariable("BlobConnectionString")!));
 
 
                     services.AddSingleton(sp =>

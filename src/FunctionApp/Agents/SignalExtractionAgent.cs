@@ -1,26 +1,48 @@
 ﻿using Contracts.Signals;
+using FunctionApp.Parsing;
 
 namespace FunctionApp.Agents;
 
 public sealed class SignalExtractionAgent
     : IAgent<string, BusinessSignalsV1>
 {
-    public Task<BusinessSignalsV1> ExecuteAsync(
+    private readonly BlobFileReader _blobReader;
+
+    public SignalExtractionAgent(BlobFileReader blobReader)
+    {
+        _blobReader = blobReader;
+    }
+
+    public async Task<BusinessSignalsV1> ExecuteAsync(
         string blobPath,
         CancellationToken cancellationToken = default)
     {
-        // TODO:
-        // - Load file from Blob Storage
-        // - Parse CSV / Excel
-        // - Compute deterministic signals
+        // Temporary convention for testing
+        const string containerName = "uploads";
 
-        var signals = new BusinessSignalsV1(
-            RecordCount: 0,
-            NumericAverages: new Dictionary<string, decimal>(),
-            NumericTotals: new Dictionary<string, decimal>(),
-            CategoryCounts: new Dictionary<string, int>()
+        var fileContent = await _blobReader.ReadTextAsync(
+            containerName,
+            blobPath,
+            cancellationToken);
+
+        // TODO: Replace with real CSV/Excel parsing
+        // For now, return placeholder signals
+
+        return new BusinessSignalsV1(
+            RecordCount: 100,
+            NumericAverages: new Dictionary<string, decimal>
+            {
+                ["Revenue"] = 1250.50m
+            },
+            NumericTotals: new Dictionary<string, decimal>
+            {
+                ["Revenue"] = 125050m
+            },
+            CategoryCounts: new Dictionary<string, int>
+            {
+                ["Region:EMEA"] = 40,
+                ["Region:APAC"] = 60
+            }
         );
-
-        return Task.FromResult(signals);
     }
 }
