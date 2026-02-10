@@ -23,10 +23,13 @@ public sealed class GetJobStatusFunction
         Guid jobId,
         FunctionContext context)
     {
-        var result = await _statusAgent.ExecuteAsync(jobId);
+        var status = await _statusAgent.ExecuteAsync(
+            jobId,
+            context.CancellationToken
+        );
 
         var response = request.CreateResponse(HttpStatusCode.OK);
-        await response.WriteAsJsonAsync(result);
+        await response.WriteAsJsonAsync(status);
         return response;
     }
 }
