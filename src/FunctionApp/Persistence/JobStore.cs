@@ -36,4 +36,26 @@ public sealed class JobStore
         await conn.OpenAsync(cancellationToken);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
+
+    public async Task UpdateStatusAsync(
+    Guid jobId,
+    string status,
+    CancellationToken cancellationToken)
+    {
+        const string sql = @"
+        UPDATE Jobs
+        SET Status = @Status,
+            LastUpdatedAt = @LastUpdatedAt
+        WHERE JobId = @JobId";
+
+        using var conn = new SqlConnection(_connectionString);
+        using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.AddWithValue("@JobId", jobId);
+        cmd.Parameters.AddWithValue("@Status", status);
+        cmd.Parameters.AddWithValue("@LastUpdatedAt", DateTimeOffset.UtcNow);
+
+        await conn.OpenAsync(cancellationToken);
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 }
