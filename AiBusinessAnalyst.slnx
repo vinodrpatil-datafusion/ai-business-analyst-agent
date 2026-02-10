@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/Solution Items/">
     <File Path=".gitignore" />
+    <File Path="database/schema.sql" />
   </Folder>
   <Project Path="src/Contracts/Contracts.csproj" Id="0ad172bd-392f-43d4-9f90-9f6fd5601f17" />
   <Project Path="src/FunctionApp/FunctionApp.csproj" Id="c385c9cc-98ea-46ff-8d21-b1021f441adc" />
