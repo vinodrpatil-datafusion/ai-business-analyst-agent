@@ -1,4 +1,5 @@
 using Contracts.Insights;
+using Contracts.Invocation;
 using Contracts.Signals;
 using FunctionApp.Agents;
 using Microsoft.Azure.Functions.Worker;
@@ -22,6 +23,7 @@ namespace FunctionApp
                     // Agent registrations (agent-oriented architecture)
                     services.AddSingleton<IAgent<string, BusinessSignalsV1>, SignalExtractionAgent>();
                     services.AddSingleton<IAgent<BusinessSignalsV1, BusinessInsightsV1>, InsightReasoningAgent>();
+                    services.AddSingleton<IAgent<Guid, JobStatusResponseV1>, JobStatusQueryAgent>();
                 })
                 .Build();
 

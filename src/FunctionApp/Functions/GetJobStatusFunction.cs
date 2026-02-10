@@ -1,4 +1,5 @@
 ﻿using Contracts.Invocation;
+using FunctionApp.Agents;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
 using System.Net;
@@ -7,6 +8,14 @@ namespace FunctionApp.Functions;
 
 public sealed class GetJobStatusFunction
 {
+    private readonly IAgent<Guid, JobStatusResponseV1> _statusAgent;
+
+    public GetJobStatusFunction(
+        IAgent<Guid, JobStatusResponseV1> statusAgent)
+    {
+        _statusAgent = statusAgent;
+    }
+
     [Function("GetJobStatus")]
     public async Task<HttpResponseData> RunAsync(
         [HttpTrigger(AuthorizationLevel.Function, "get", Route = "jobs/{jobId:guid}")]
@@ -14,20 +23,10 @@ public sealed class GetJobStatusFunction
         Guid jobId,
         FunctionContext context)
     {
-        // TODO:
-        // - Query job table
-        // - Return current status
+        var result = await _statusAgent.ExecuteAsync(jobId);
 
         var response = request.CreateResponse(HttpStatusCode.OK);
-
-        var status = new JobStatusResponseV1(
-            JobId: jobId,
-            Status: "Pending",
-            LastUpdatedAt: DateTimeOffset.UtcNow,
-            InsightsAvailable: false
-        );
-
-        await response.WriteAsJsonAsync(status);
+        await response.WriteAsJsonAsync(result);
         return response;
     }
 }
