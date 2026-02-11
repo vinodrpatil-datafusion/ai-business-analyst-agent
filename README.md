@@ -96,7 +96,7 @@ Each layer has a single responsibility, making the system easier to evolve witho
 
 - **GitHub** – source control and collaboration  
 - **GitHub Actions** – CI/CD automation  
-- **VS Code** – development environment  
+- **Visual Studio 2026** – development environment  
 - **GitHub Copilot** – AI-assisted development  
 
 ---
