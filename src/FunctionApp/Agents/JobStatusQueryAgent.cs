@@ -22,6 +22,7 @@ public sealed class JobStatusQueryAgent
             JobId: jobId,
             Status: "Pending",
             LastUpdatedAt: DateTimeOffset.UtcNow,
+            SubmittedAt: DateTimeOffset.UtcNow,
             InsightsAvailable: false
         );
 

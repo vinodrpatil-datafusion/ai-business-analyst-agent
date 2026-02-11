@@ -2,13 +2,15 @@
   AI Business Analyst Agent
   Database Schema (V1 – Blob-first ingestion)
 
-  Key decisions:
-  --------------
-  - Blob Storage is the ingestion layer
-  - Jobs reference BlobPath (source of truth)
-  - File metadata may be derived later
+  Key Architecture Decisions:
+  ---------------------------
+  - Azure Blob Storage is the ingestion layer
+  - Jobs reference BlobPath (authoritative input source)
+  - File metadata is derived from Blob Storage
   - Deterministic signals precede AI reasoning
+  - Insights availability is derived (not stored)
 ==============================================================*/
+
 
 ---------------------------------------------------------------
 -- TABLE: Jobs
@@ -20,13 +22,20 @@ CREATE TABLE Jobs (
     BlobPath NVARCHAR(512) NOT NULL,
 
     -- Job lifecycle status
-    -- Pending | Processing | Completed | Failed
-    Status NVARCHAR(50) NOT NULL,
+    -- Allowed values: Pending | Processing | Completed | Failed
+    Status NVARCHAR(50) NOT NULL
+        CHECK (Status IN ('Pending', 'Processing', 'Completed', 'Failed')),
 
     -- Audit fields
     SubmittedAt DATETIMEOFFSET NOT NULL,
     LastUpdatedAt DATETIMEOFFSET NOT NULL
 );
+
+-- Indexes for operational queries
+CREATE INDEX IX_Jobs_Status ON Jobs(Status);
+CREATE INDEX IX_Jobs_SubmittedAt ON Jobs(SubmittedAt);
+
+
 
 ---------------------------------------------------------------
 -- TABLE: BusinessSignals
@@ -34,14 +43,21 @@ CREATE TABLE Jobs (
 CREATE TABLE BusinessSignals (
     JobId UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
 
-    -- Serialized BusinessSignalsV1
+    -- Serialized BusinessSignalsV1 (deterministic extraction output)
     SignalsJson NVARCHAR(MAX) NOT NULL,
 
+    -- Timestamp when signals were generated
     GeneratedAt DATETIMEOFFSET NOT NULL,
 
     CONSTRAINT FK_BusinessSignals_Jobs
         FOREIGN KEY (JobId) REFERENCES Jobs(JobId)
+        ON DELETE CASCADE
 );
+
+CREATE INDEX IX_BusinessSignals_GeneratedAt
+    ON BusinessSignals(GeneratedAt);
+
+
 
 ---------------------------------------------------------------
 -- TABLE: BusinessInsights
@@ -49,11 +65,16 @@ CREATE TABLE BusinessSignals (
 CREATE TABLE BusinessInsights (
     JobId UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
 
-    -- Serialized BusinessInsightsV1
+    -- Serialized BusinessInsightsV1 (AI reasoning output)
     InsightsJson NVARCHAR(MAX) NOT NULL,
 
+    -- Timestamp when insights were generated
     GeneratedAt DATETIMEOFFSET NOT NULL,
 
     CONSTRAINT FK_BusinessInsights_Jobs
         FOREIGN KEY (JobId) REFERENCES Jobs(JobId)
+        ON DELETE CASCADE
 );
+
+CREATE INDEX IX_BusinessInsights_GeneratedAt
+    ON BusinessInsights(GeneratedAt);
