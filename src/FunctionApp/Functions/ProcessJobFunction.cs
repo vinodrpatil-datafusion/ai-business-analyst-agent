@@ -4,6 +4,8 @@ using FunctionApp.Agents;
 using FunctionApp.Persistence;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
+using Microsoft.OpenApi.Models;
 using System.Net;
 
 namespace FunctionApp.Functions;
@@ -31,6 +33,27 @@ public sealed class ProcessJobFunction
     }
 
     [Function("ProcessJob")]
+    [OpenApiOperation(
+        operationId: "ProcessJob",
+        tags: new[] { "Jobs" },
+        Summary = "Process a submitted job",
+        Description = "Triggers signal extraction and AI-based insight generation for a job."
+    )]
+    [OpenApiParameter(
+        name: "jobId",
+        In = ParameterLocation.Path,
+        Required = true,
+        Type = typeof(Guid),
+        Summary = "Unique identifier of the job to process"
+    )]
+    [OpenApiResponseWithoutBody(
+        statusCode: HttpStatusCode.OK,
+        Summary = "Job processing started"
+    )]
+    [OpenApiResponseWithoutBody(
+        statusCode: HttpStatusCode.NotFound,
+        Summary = "Job not found"
+    )]
     public async Task<HttpResponseData> RunAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "jobs/{jobId:guid}/process")]
         HttpRequestData request,
@@ -51,12 +74,6 @@ public sealed class ProcessJobFunction
                 await notFound.WriteStringAsync("Job not found");
                 return notFound;
             }
-
-            // NOTE:
-            // BlobPath is stored in Jobs table and should be fetched
-            // via a dedicated method in JobStore.
-            // For now, we assume it is already available.
-            // (Next refactor can add GetBlobPathAsync)
 
             var blobPath = await _jobStore.GetBlobPathAsync(jobId, context.CancellationToken);
 

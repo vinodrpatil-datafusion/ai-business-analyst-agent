@@ -1,5 +1,6 @@
 ﻿using Contracts.Invocation;
 using Microsoft.Data.SqlClient;
+using System.Data;
 
 namespace FunctionApp.Persistence;
 
@@ -77,49 +78,46 @@ public sealed class JobStore
       Read-only query used by GetJobStatus API.
       Returns a stable contract for UI & orchestration.
     ------------------------------------------------------------*/
-    public async Task<JobStatusResponseV1> GetStatusAsync(
+    public async Task<JobStatusResponseV1?> GetStatusAsync(
         Guid jobId,
         CancellationToken cancellationToken)
     {
         const string sql = @"
-            SELECT
-                j.JobId,
-                j.Status,
-                j.LastUpdatedAt,
-                CASE
-                    WHEN bi.JobId IS NOT NULL THEN CAST(1 AS BIT)
-                    ELSE CAST(0 AS BIT)
-                END AS InsightsAvailable
-            FROM Jobs j
-            LEFT JOIN BusinessInsights bi
-                ON j.JobId = bi.JobId
-            WHERE j.JobId = @JobId";
+        SELECT
+            j.JobId,
+            j.Status,
+            j.SubmittedAt,
+            j.LastUpdatedAt,
+            CASE
+                WHEN bi.JobId IS NOT NULL THEN CAST(1 AS BIT)
+                ELSE CAST(0 AS BIT)
+            END AS InsightsAvailable
+        FROM Jobs j
+        LEFT JOIN BusinessInsights bi
+            ON j.JobId = bi.JobId
+        WHERE j.JobId = @JobId";
 
-        using var conn = new SqlConnection(_connectionString);
-        using var cmd = new SqlCommand(sql, conn);
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.AddWithValue("@JobId", jobId);
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier)
+                      .Value = jobId;
 
         await conn.OpenAsync(cancellationToken);
 
-        using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+        await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
         if (!await reader.ReadAsync(cancellationToken))
         {
-            // Job not found → treat as not found
-            return new JobStatusResponseV1(
-                JobId: jobId,
-                Status: "NotFound",
-                LastUpdatedAt: DateTimeOffset.UtcNow,
-                InsightsAvailable: false
-            );
+            return null; // Let API layer return 404
         }
 
         return new JobStatusResponseV1(
             JobId: reader.GetGuid(0),
             Status: reader.GetString(1),
-            LastUpdatedAt: reader.GetDateTimeOffset(2),
-            InsightsAvailable: reader.GetBoolean(3)
+            SubmittedAt: reader.GetDateTimeOffset(2),
+            LastUpdatedAt: reader.GetDateTimeOffset(3),
+            InsightsAvailable: reader.GetBoolean(4)
         );
     }
 

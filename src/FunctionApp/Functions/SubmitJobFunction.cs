@@ -2,6 +2,8 @@ using Contracts.Invocation;
 using FunctionApp.Persistence;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Http;
+using Microsoft.Azure.WebJobs.Extensions.OpenApi.Core.Attributes;
+using Microsoft.OpenApi.Models;
 using System.Net;
 using System.Text.Json;
 
@@ -22,6 +24,29 @@ public sealed class SubmitJobFunction
     }
 
     [Function("SubmitJob")]
+    [OpenApiOperation(
+        operationId: "SubmitJob",
+        tags: new[] { "Jobs - v1" },
+        Summary = "Submit a new business analysis job",
+        Description = "Registers a new analysis job for a previously uploaded file and returns a JobId for status tracking."
+    )]
+    [OpenApiRequestBody(
+        contentType: "application/json",
+        bodyType: typeof(SubmitJobRequestV1),
+        Required = true,
+        Description = "Job submission request containing file metadata and blob location."
+    )]
+    [OpenApiResponseWithBody(
+        statusCode: HttpStatusCode.Accepted,
+        contentType: "application/json",
+        bodyType: typeof(SubmitJobResponseV1),
+        Summary = "Job successfully registered",
+        Description = "Returns the generated JobId and submission timestamp."
+    )]
+    [OpenApiResponseWithoutBody(
+        statusCode: HttpStatusCode.BadRequest,
+        Summary = "Invalid request payload"
+    )]
     public async Task<HttpResponseData> RunAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "jobs")]
         HttpRequestData request,

@@ -19,7 +19,7 @@ public sealed class InsightReasoningAgent
             ExecutiveSummary: "Insights generation pending.",
             KeyRisks: Array.Empty<string>(),
             Opportunities: Array.Empty<string>(),
-            RecommendedActions: Array.Empty<string>(),
+            Recommendations: Array.Empty<string>(),
             GeneratedAt: DateTimeOffset.UtcNow
         );
 

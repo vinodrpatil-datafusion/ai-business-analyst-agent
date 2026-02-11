@@ -30,6 +30,7 @@ public sealed class SignalExtractionAgent
 
         return new BusinessSignalsV1(
             RecordCount: 100,
+            GeneratedAt: DateTimeOffset.UtcNow,
             NumericAverages: new Dictionary<string, decimal>
             {
                 ["Revenue"] = 1250.50m
