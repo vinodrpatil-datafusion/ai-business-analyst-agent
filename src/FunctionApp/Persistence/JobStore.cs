@@ -121,6 +121,41 @@ public sealed class JobStore
         );
     }
 
+    /// <summary>
+    /// Attempts to atomically mark the specified job as 'Processing' if its current status is 'Pending'.
+    /// Only the caller that updates a single row will observe success; this method is used to implement
+    /// a lightweight lease/race so only one worker proceeds to process the job.
+    /// </summary>
+    /// <param name="jobId">The unique identifier of the job to mark as processing.</param>
+    /// <param name="cancellationToken">A <see cref="CancellationToken"/> that can be used to cancel the operation.</param>
+    /// <returns>
+    /// <c>true</c> if the job status was updated (one row affected) and the caller may proceed with processing;
+    /// otherwise <c>false</c> if the job was not in the expected 'Pending' state or another caller won the race.
+    /// </returns>
+    public async Task<bool> TryMarkProcessingAsync(
+    Guid jobId,
+    CancellationToken cancellationToken)
+    {
+        const string sql = @"
+        UPDATE Jobs
+        SET Status = 'Processing',
+            LastUpdatedAt = SYSDATETIMEOFFSET()
+        WHERE JobId = @JobId
+          AND Status = 'Pending';";
+
+        using var conn = new SqlConnection(_connectionString);
+        using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.AddWithValue("@JobId", jobId);
+
+        await conn.OpenAsync(cancellationToken);
+
+        var affected = await cmd.ExecuteNonQueryAsync(cancellationToken);
+
+        // Only one caller will get 1 row affected.
+        return affected == 1;
+    }
+
 
     public async Task<string?> GetBlobPathAsync(
     Guid jobId,

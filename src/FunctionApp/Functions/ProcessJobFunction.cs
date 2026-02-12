@@ -34,23 +34,18 @@ public sealed class ProcessJobFunction
         operationId: "ProcessJob",
         tags: new[] { "Jobs" },
         Summary = "Process a submitted job",
-        Description = "Triggers deterministic signal extraction and AI-based insight generation for a job."
+        Description = "Triggers deterministic signal extraction and AI-based insight generation."
     )]
     [OpenApiParameter(
         name: "jobId",
         In = ParameterLocation.Path,
         Required = true,
         Type = typeof(Guid),
-        Summary = "Unique identifier of the job to process"
+        Summary = "Unique identifier of the job"
     )]
-    [OpenApiResponseWithoutBody(
-        statusCode: HttpStatusCode.Accepted,
-        Summary = "Job processing started"
-    )]
-    [OpenApiResponseWithoutBody(
-        statusCode: HttpStatusCode.NotFound,
-        Summary = "Job not found"
-    )]
+    [OpenApiResponseWithoutBody(HttpStatusCode.Accepted)]
+    [OpenApiResponseWithoutBody(HttpStatusCode.NotFound)]
+    [OpenApiResponseWithoutBody(HttpStatusCode.Conflict)]
     public async Task<HttpResponseData> RunAsync(
         [HttpTrigger(AuthorizationLevel.Function, "post", Route = "jobs/{jobId:guid}/process")]
         HttpRequestData request,
@@ -59,42 +54,57 @@ public sealed class ProcessJobFunction
     {
         var ct = context.CancellationToken;
 
-        // 1️ Check if job exists first
+        // 1️ Check job exists
         var jobStatus = await _jobStore.GetStatusAsync(jobId, ct);
 
         if (jobStatus.Status == "NotFound")
         {
             var notFound = request.CreateResponse(HttpStatusCode.NotFound);
-            await notFound.WriteStringAsync("Job not found");
+            await notFound.WriteStringAsync("Job not found.");
             return notFound;
+        }
+
+        // 2️ Idempotency: reject if already completed
+        if (jobStatus.Status == "Completed")
+        {
+            var conflict = request.CreateResponse(HttpStatusCode.Conflict);
+            await conflict.WriteStringAsync("Job already completed.");
+            return conflict;
+        }
+
+        // 3️ Concurrency-safe atomic transition Pending → Processing
+        var locked = await _jobStore.TryMarkProcessingAsync(jobId, ct);
+
+        if (!locked)
+        {
+            var conflict = request.CreateResponse(HttpStatusCode.Conflict);
+            await conflict.WriteStringAsync("Job is already being processed.");
+            return conflict;
         }
 
         try
         {
-            // 2️ Mark job as Processing
-            await _jobStore.UpdateStatusAsync(jobId, "Processing", ct);
-
-            // 3️ Get BlobPath
+            // 4️ Retrieve BlobPath
             var blobPath = await _jobStore.GetBlobPathAsync(jobId, ct);
 
             if (string.IsNullOrWhiteSpace(blobPath))
-                throw new InvalidOperationException("BlobPath not found for job");
+                throw new InvalidOperationException("BlobPath not found for job.");
 
-            // 4️ Deterministic signal extraction
+            // 5️ Deterministic signal extraction
             var signals = await _signalAgent.ExecuteAsync(blobPath, ct);
             await _signalStore.SaveAsync(jobId, signals, ct);
 
-            // 5️ AI reasoning (agent now persists insights internally)
+            // 6️ AI reasoning (agent persists insights internally)
             await _insightAgent.ExecuteAsync((jobId, signals), ct);
 
-            // 6️ Mark job as Completed
+            // 7️ Mark Completed
             await _jobStore.UpdateStatusAsync(jobId, "Completed", ct);
 
             var accepted = request.CreateResponse(HttpStatusCode.Accepted);
             await accepted.WriteStringAsync("Job processed successfully.");
             return accepted;
         }
-        catch (Exception)
+        catch
         {
             await _jobStore.UpdateStatusAsync(jobId, "Failed", ct);
             throw;
