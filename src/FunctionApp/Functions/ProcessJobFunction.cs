@@ -1,4 +1,5 @@
 ﻿using Contracts.Insights;
+using Contracts.Jobs;
 using Contracts.Signals;
 using FunctionApp.Agents;
 using FunctionApp.Persistence;
@@ -47,10 +48,10 @@ public sealed class ProcessJobFunction
     [OpenApiResponseWithoutBody(HttpStatusCode.NotFound)]
     [OpenApiResponseWithoutBody(HttpStatusCode.Conflict)]
     public async Task<HttpResponseData> RunAsync(
-    [HttpTrigger(AuthorizationLevel.Function, "post", Route = "jobs/{jobId:guid}/process")]
-    HttpRequestData request,
-    Guid jobId,
-    FunctionContext context)
+        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "jobs/{jobId:guid}/process")]
+        HttpRequestData request,
+        Guid jobId,
+        FunctionContext context)
     {
         var ct = context.CancellationToken;
 
@@ -59,7 +60,7 @@ public sealed class ProcessJobFunction
         // ------------------------------------------------------------
         var jobStatus = await _jobStore.GetStatusAsync(jobId, ct);
 
-        if (jobStatus.Status == "NotFound")
+        if (jobStatus is null)
         {
             var notFound = request.CreateResponse(HttpStatusCode.NotFound);
             await notFound.WriteStringAsync("Job not found.");
@@ -69,7 +70,7 @@ public sealed class ProcessJobFunction
         // ------------------------------------------------------------
         // 2. Idempotency guard (prevent reprocessing completed jobs)
         // ------------------------------------------------------------
-        if (jobStatus.Status == "Completed")
+        if (jobStatus.Status == JobStatuses.Completed)
         {
             var conflict = request.CreateResponse(HttpStatusCode.Conflict);
             await conflict.WriteStringAsync("Job already completed.");
@@ -78,7 +79,6 @@ public sealed class ProcessJobFunction
 
         // ------------------------------------------------------------
         // 3. Concurrency-safe transition: Pending → Processing
-        //    (Atomic SQL update prevents race conditions)
         // ------------------------------------------------------------
         var locked = await _jobStore.TryMarkProcessingAsync(jobId, ct);
 
@@ -100,7 +100,7 @@ public sealed class ProcessJobFunction
         try
         {
             // ------------------------------------------------------------
-            // 5. Resolve BlobPath (authoritative input source)
+            // 5. Resolve BlobPath
             // ------------------------------------------------------------
             var blobPath =
                 await _jobStore.GetBlobPathAsync(jobId, timeoutCts.Token);
@@ -110,7 +110,6 @@ public sealed class ProcessJobFunction
 
             // ------------------------------------------------------------
             // 6. Deterministic signal extraction
-            //    (Raw data is never sent directly to the LLM)
             // ------------------------------------------------------------
             var signals =
                 await _signalAgent.ExecuteAsync(blobPath, timeoutCts.Token);
@@ -118,7 +117,7 @@ public sealed class ProcessJobFunction
             await _signalStore.SaveAsync(jobId, signals, timeoutCts.Token);
 
             // ------------------------------------------------------------
-            // 7. AI reasoning (InsightReasoningAgent persists insights)
+            // 7. AI reasoning
             // ------------------------------------------------------------
             await _insightAgent.ExecuteAsync(
                 (jobId, signals),
@@ -126,7 +125,6 @@ public sealed class ProcessJobFunction
 
             // ------------------------------------------------------------
             // 8. Mark job as Completed
-            //    (Also records execution duration in DB)
             // ------------------------------------------------------------
             await _jobStore.MarkCompletedAsync(jobId, timeoutCts.Token);
 
@@ -137,7 +135,7 @@ public sealed class ProcessJobFunction
         catch
         {
             // ------------------------------------------------------------
-            // 9. Failure handling (records duration if started)
+            // 9. Failure handling
             // ------------------------------------------------------------
             await _jobStore.MarkFailedAsync(jobId, ct);
             throw;

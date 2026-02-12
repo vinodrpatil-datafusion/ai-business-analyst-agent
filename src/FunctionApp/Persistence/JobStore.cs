@@ -1,24 +1,34 @@
 ﻿using Contracts.Invocation;
+using Contracts.Jobs;
 using Microsoft.Data.SqlClient;
 using System.Data;
 
 namespace FunctionApp.Persistence;
 
+/// <summary>
+/// Provides persistence operations for job lifecycle management.
+/// This class is responsible for creating jobs, transitioning states,
+/// and retrieving job metadata in a concurrency-safe manner.
+/// </summary>
 public sealed class JobStore
 {
     private readonly string _connectionString;
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="JobStore"/> class.
+    /// </summary>
+    /// <param name="connectionString">
+    /// The SQL connection string used to access the Jobs table.
+    /// </param>
     public JobStore(string connectionString)
     {
         _connectionString = connectionString;
     }
 
-    /*------------------------------------------------------------
-      CreateJobAsync
-      ------------------------------------------------------------
-      Creates a new job anchored to a BlobPath.
-      Status is initialized to Pending.
-    ------------------------------------------------------------*/
+    /// <summary>
+    /// Creates a new job anchored to a BlobPath.
+    /// Initializes status as <see cref="JobStatuses.Pending"/>.
+    /// </summary>
     public async Task CreateJobAsync(
         Guid jobId,
         SubmitJobRequestV1 request,
@@ -32,24 +42,22 @@ public sealed class JobStore
 
         var now = DateTimeOffset.UtcNow;
 
-        using var conn = new SqlConnection(_connectionString);
-        using var cmd = new SqlCommand(sql, conn);
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.AddWithValue("@JobId", jobId);
-        cmd.Parameters.AddWithValue("@BlobPath", request.BlobPath);
-        cmd.Parameters.AddWithValue("@Status", "Pending");
-        cmd.Parameters.AddWithValue("@SubmittedAt", now);
-        cmd.Parameters.AddWithValue("@LastUpdatedAt", now);
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
+        cmd.Parameters.Add("@BlobPath", SqlDbType.NVarChar, 512).Value = request.BlobPath;
+        cmd.Parameters.Add("@Status", SqlDbType.NVarChar, 50).Value = JobStatuses.Pending;
+        cmd.Parameters.Add("@SubmittedAt", SqlDbType.DateTimeOffset).Value = now;
+        cmd.Parameters.Add("@LastUpdatedAt", SqlDbType.DateTimeOffset).Value = now;
 
         await conn.OpenAsync(cancellationToken);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /*------------------------------------------------------------
-      UpdateStatusAsync
-      ------------------------------------------------------------
-      Updates job status during processing lifecycle.
-      ------------------------------------------------------------*/
+    /// <summary>
+    /// Updates the job status and refreshes the LastUpdatedAt timestamp.
+    /// </summary>
     public async Task UpdateStatusAsync(
         Guid jobId,
         string status,
@@ -61,23 +69,21 @@ public sealed class JobStore
                 LastUpdatedAt = @LastUpdatedAt
             WHERE JobId = @JobId";
 
-        using var conn = new SqlConnection(_connectionString);
-        using var cmd = new SqlCommand(sql, conn);
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.AddWithValue("@JobId", jobId);
-        cmd.Parameters.AddWithValue("@Status", status);
-        cmd.Parameters.AddWithValue("@LastUpdatedAt", DateTimeOffset.UtcNow);
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
+        cmd.Parameters.Add("@Status", SqlDbType.NVarChar, 50).Value = status;
+        cmd.Parameters.Add("@LastUpdatedAt", SqlDbType.DateTimeOffset).Value = DateTimeOffset.UtcNow;
 
         await conn.OpenAsync(cancellationToken);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    /*------------------------------------------------------------
-      GetStatusAsync
-      ------------------------------------------------------------
-      Read-only query used by GetJobStatus API.
-      Returns a stable contract for UI & orchestration.
-    ------------------------------------------------------------*/
+    /// <summary>
+    /// Retrieves job status information for API consumption.
+    /// Returns <c>null</c> if job does not exist.
+    /// </summary>
     public async Task<JobStatusResponseV1?> GetStatusAsync(
         Guid jobId,
         CancellationToken cancellationToken)
@@ -100,17 +106,13 @@ public sealed class JobStore
         await using var conn = new SqlConnection(_connectionString);
         await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier)
-                      .Value = jobId;
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
 
         await conn.OpenAsync(cancellationToken);
-
         await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
 
         if (!await reader.ReadAsync(cancellationToken))
-        {
-            return null; // Let API layer return 404
-        }
+            return null;
 
         return new JobStatusResponseV1(
             JobId: reader.GetGuid(0),
@@ -122,32 +124,27 @@ public sealed class JobStore
     }
 
     /// <summary>
-    /// Attempts to atomically mark the specified job as 'Processing' if its current status is 'Pending'.
-    /// Only the caller that updates a single row will observe success; this method is used to implement
-    /// a lightweight lease/race so only one worker proceeds to process the job.
+    /// Atomically transitions job from Pending → Processing.
+    /// Only one caller may succeed (concurrency protection).
     /// </summary>
-    /// <param name="jobId">The unique identifier of the job to mark as processing.</param>
-    /// <param name="cancellationToken">A <see cref="CancellationToken"/> that can be used to cancel the operation.</param>
-    /// <returns>
-    /// <c>true</c> if the job status was updated (one row affected) and the caller may proceed with processing;
-    /// otherwise <c>false</c> if the job was not in the expected 'Pending' state or another caller won the race.
-    /// </returns>
     public async Task<bool> TryMarkProcessingAsync(
         Guid jobId,
         CancellationToken cancellationToken)
     {
         const string sql = @"
         UPDATE Jobs
-        SET Status = 'Processing',
+        SET Status = @ProcessingStatus,
             ProcessingStartedAt = SYSDATETIMEOFFSET(),
             LastUpdatedAt = SYSDATETIMEOFFSET()
         WHERE JobId = @JobId
-          AND Status = 'Pending';";
+          AND Status = @PendingStatus;";
 
-        using var conn = new SqlConnection(_connectionString);
-        using var cmd = new SqlCommand(sql, conn);
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.AddWithValue("@JobId", jobId);
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
+        cmd.Parameters.Add("@ProcessingStatus", SqlDbType.NVarChar, 50).Value = JobStatuses.Processing;
+        cmd.Parameters.Add("@PendingStatus", SqlDbType.NVarChar, 50).Value = JobStatuses.Pending;
 
         await conn.OpenAsync(cancellationToken);
 
@@ -156,13 +153,16 @@ public sealed class JobStore
         return affected == 1;
     }
 
+    /// <summary>
+    /// Marks job as Completed and records execution duration.
+    /// </summary>
     public async Task MarkCompletedAsync(
-    Guid jobId,
-    CancellationToken cancellationToken)
+        Guid jobId,
+        CancellationToken cancellationToken)
     {
         const string sql = @"
         UPDATE Jobs
-        SET Status = 'Completed',
+        SET Status = @CompletedStatus,
             ProcessingCompletedAt = SYSDATETIMEOFFSET(),
             ProcessingDurationMs = DATEDIFF(
                 MILLISECOND,
@@ -172,23 +172,26 @@ public sealed class JobStore
             LastUpdatedAt = SYSDATETIMEOFFSET()
         WHERE JobId = @JobId;";
 
-        using var conn = new SqlConnection(_connectionString);
-        using var cmd = new SqlCommand(sql, conn);
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.AddWithValue("@JobId", jobId);
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
+        cmd.Parameters.Add("@CompletedStatus", SqlDbType.NVarChar, 50).Value = JobStatuses.Completed;
 
         await conn.OpenAsync(cancellationToken);
-
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Marks job as Failed and records execution duration if started.
+    /// </summary>
     public async Task MarkFailedAsync(
-    Guid jobId,
-    CancellationToken cancellationToken)
+        Guid jobId,
+        CancellationToken cancellationToken)
     {
         const string sql = @"
         UPDATE Jobs
-        SET Status = 'Failed',
+        SET Status = @FailedStatus,
             ProcessingCompletedAt = SYSDATETIMEOFFSET(),
             ProcessingDurationMs = CASE
                 WHEN ProcessingStartedAt IS NOT NULL
@@ -202,32 +205,35 @@ public sealed class JobStore
             LastUpdatedAt = SYSDATETIMEOFFSET()
         WHERE JobId = @JobId;";
 
-        using var conn = new SqlConnection(_connectionString);
-        using var cmd = new SqlCommand(sql, conn);
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.AddWithValue("@JobId", jobId);
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
+        cmd.Parameters.Add("@FailedStatus", SqlDbType.NVarChar, 50).Value = JobStatuses.Failed;
 
         await conn.OpenAsync(cancellationToken);
-
         await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Retrieves the BlobPath associated with a job.
+    /// </summary>
     public async Task<string?> GetBlobPathAsync(
-    Guid jobId,
-    CancellationToken cancellationToken)
+        Guid jobId,
+        CancellationToken cancellationToken)
     {
         const string sql = @"
         SELECT BlobPath
         FROM Jobs
         WHERE JobId = @JobId";
 
-        using var conn = new SqlConnection(_connectionString);
-        using var cmd = new SqlCommand(sql, conn);
+        await using var conn = new SqlConnection(_connectionString);
+        await using var cmd = new SqlCommand(sql, conn);
 
-        cmd.Parameters.AddWithValue("@JobId", jobId);
+        cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
 
         await conn.OpenAsync(cancellationToken);
+
         return (string?)await cmd.ExecuteScalarAsync(cancellationToken);
     }
-
 }

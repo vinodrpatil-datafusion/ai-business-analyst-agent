@@ -1,4 +1,5 @@
 ﻿using Contracts.Invocation;
+using Contracts.Jobs;
 
 namespace FunctionApp.Agents;
 
@@ -20,7 +21,7 @@ public sealed class JobStatusQueryAgent
 
         var response = new JobStatusResponseV1(
             JobId: jobId,
-            Status: "Pending",
+            Status: JobStatuses.Pending,
             LastUpdatedAt: DateTimeOffset.UtcNow,
             SubmittedAt: DateTimeOffset.UtcNow,
             InsightsAvailable: false

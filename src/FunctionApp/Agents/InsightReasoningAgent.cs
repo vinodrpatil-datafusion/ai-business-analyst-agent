@@ -21,6 +21,7 @@ public sealed class InsightReasoningAgent
     private readonly string _deploymentName;
 
     private const string PromptVersion = "v1.0";
+    private const int MaxResponseLength = 100_000; // safety guard
 
     public InsightReasoningAgent(
         IConfiguration config,
@@ -78,7 +79,8 @@ public sealed class InsightReasoningAgent
                 new ChatMessage[]
                 {
                     new SystemChatMessage(
-                        "You produce structured executive-level business insights."),
+                        "You must respond ONLY with valid JSON matching the expected schema. " +
+                        "Do not include markdown, commentary, or explanations."),
                     new UserChatMessage(prompt)
                 },
                 new ChatCompletionOptions
@@ -101,15 +103,18 @@ public sealed class InsightReasoningAgent
                 .FirstOrDefault(p => p.Kind == ChatMessageContentPartKind.Text);
 
             if (textPart == null || string.IsNullOrWhiteSpace(textPart.Text))
-            {
                 throw new InvalidOperationException(
                     "AI response did not contain valid text content.");
-            }
 
-            var rawJson = textPart.Text;
+            var rawJson = textPart.Text.Trim();
 
-            // Validate JSON
-            using var _ = JsonDocument.Parse(rawJson);
+            // Guard against oversized or malicious output
+            if (rawJson.Length > MaxResponseLength)
+                throw new InvalidOperationException(
+                    "AI response exceeds expected size.");
+
+            // Validate JSON structure
+            using var doc = JsonDocument.Parse(rawJson);
 
             var parsed = JsonSerializer.Deserialize<LLMInsightResponse>(
                 rawJson,
@@ -119,7 +124,8 @@ public sealed class InsightReasoningAgent
                 });
 
             if (parsed is null)
-                throw new InvalidOperationException("Failed to parse AI JSON response");
+                throw new InvalidOperationException(
+                    "Failed to parse AI JSON response.");
 
             var structured = new BusinessInsightsV1(
                 ExecutiveSummary: parsed.ExecutiveSummary ?? string.Empty,
@@ -129,7 +135,7 @@ public sealed class InsightReasoningAgent
                 GeneratedAt: DateTimeOffset.UtcNow
             );
 
-            // Persist to database
+            // Persist structured + raw response + metadata
             await _insightStore.SaveAsync(
                 jobId,
                 structured,
@@ -142,7 +148,7 @@ public sealed class InsightReasoningAgent
                 response.Value.Usage?.TotalTokenCount,
                 ct);
 
-            // Debug-level token telemetry
+            // Token telemetry (debug-level only)
             if (response.Value.Usage != null)
             {
                 _logger.LogDebug(
@@ -154,6 +160,16 @@ public sealed class InsightReasoningAgent
             }
 
             return structured;
+        }
+        catch (RequestFailedException ex)
+        {
+            _logger.LogError(
+                ex,
+                "Azure OpenAI request failed for JobId {JobId} with Status {StatusCode}",
+                jobId,
+                ex.Status);
+
+            throw; // Let orchestration mark job as Failed
         }
         catch (Exception ex)
         {
