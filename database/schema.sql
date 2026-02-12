@@ -65,11 +65,25 @@ CREATE INDEX IX_BusinessSignals_GeneratedAt
 CREATE TABLE BusinessInsights (
     JobId UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
 
-    -- Serialized BusinessInsightsV1 (AI reasoning output)
+    -- Final structured DTO
     InsightsJson NVARCHAR(MAX) NOT NULL,
 
-    -- Timestamp when insights were generated
+    -- Raw LLM JSON response for audit/debug
+    RawResponse NVARCHAR(MAX) NULL,
+
+    -- When insights were generated
     GeneratedAt DATETIMEOFFSET NOT NULL,
+
+    -- Prompt governance (manual versioning)
+    PromptVersion NVARCHAR(20) NULL,
+
+    -- Model metadata
+    ModelDeployment NVARCHAR(100) NULL,
+
+    -- Cost tracking
+    InputTokens INT NULL,
+    OutputTokens INT NULL,
+    TotalTokens INT NULL,
 
     CONSTRAINT FK_BusinessInsights_Jobs
         FOREIGN KEY (JobId) REFERENCES Jobs(JobId)

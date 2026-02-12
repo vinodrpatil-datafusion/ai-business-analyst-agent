@@ -24,7 +24,8 @@ namespace FunctionApp
 
                     // Agent registrations (agent-oriented architecture)
                     services.AddSingleton<IAgent<string, BusinessSignalsV1>, SignalExtractionAgent>();
-                    services.AddSingleton<IAgent<BusinessSignalsV1, BusinessInsightsV1>, InsightReasoningAgent>();
+                    services.AddSingleton<IAgent<(Guid JobId, BusinessSignalsV1 Signals), BusinessInsightsV1>,
+                                 InsightReasoningAgent>();
                     services.AddSingleton<IAgent<Guid, JobStatusResponseV1>, JobStatusQueryAgent>();
 
                     services.AddSingleton(sp =>

@@ -2,25 +2,33 @@
 using Azure.AI.OpenAI;
 using Contracts.Insights;
 using Contracts.Signals;
+using FunctionApp.Persistence;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace FunctionApp.Agents;
 
 public sealed class InsightReasoningAgent
-    : IAgent<BusinessSignalsV1, BusinessInsightsV1>
+    : IAgent<(Guid JobId, BusinessSignalsV1 Signals), BusinessInsightsV1>
 {
     private readonly ChatClient _chatClient;
     private readonly string _promptTemplate;
     private readonly ILogger<InsightReasoningAgent> _logger;
+    private readonly InsightStore _insightStore;
+    private readonly string _deploymentName;
+
+    private const string PromptVersion = "v1.0";
 
     public InsightReasoningAgent(
         IConfiguration config,
-        ILogger<InsightReasoningAgent> logger)
+        ILogger<InsightReasoningAgent> logger,
+        InsightStore insightStore)
     {
         _logger = logger;
+        _insightStore = insightStore;
 
         var endpoint = config["AzureOpenAI:Endpoint"]
             ?? throw new InvalidOperationException("Missing OpenAI endpoint");
@@ -28,17 +36,14 @@ public sealed class InsightReasoningAgent
         var apiKey = config["AzureOpenAI:ApiKey"]
             ?? throw new InvalidOperationException("Missing OpenAI API key");
 
-        var deployment = config["AzureOpenAI:DeploymentName"]
+        _deploymentName = config["AzureOpenAI:DeploymentName"]
             ?? throw new InvalidOperationException("Missing deployment name");
 
-        var options = new AzureOpenAIClientOptions();
-
-        var openAiClient = new AzureOpenAIClient(
+        var client = new AzureOpenAIClient(
             new Uri(endpoint),
-            new AzureKeyCredential(apiKey),
-            options);
+            new AzureKeyCredential(apiKey));
 
-        _chatClient = openAiClient.GetChatClient(deployment);
+        _chatClient = client.GetChatClient(_deploymentName);
 
         var promptPath = Path.Combine(
             AppContext.BaseDirectory,
@@ -52,12 +57,22 @@ public sealed class InsightReasoningAgent
     }
 
     public async Task<BusinessInsightsV1> ExecuteAsync(
-        BusinessSignalsV1 signals,
+        (Guid JobId, BusinessSignalsV1 Signals) input,
         CancellationToken ct)
     {
+        var (jobId, signals) = input;
+
         try
         {
+            _logger.LogInformation(
+                "Starting AI reasoning for JobId {JobId}, Model {Model}, PromptVersion {Version}",
+                jobId,
+                _deploymentName,
+                PromptVersion);
+
             var prompt = BuildPrompt(signals);
+
+            var stopwatch = Stopwatch.StartNew();
 
             var response = await _chatClient.CompleteChatAsync(
                 new ChatMessage[]
@@ -75,7 +90,13 @@ public sealed class InsightReasoningAgent
                 cancellationToken: ct
             );
 
-            // Extract first TEXT content part safely
+            stopwatch.Stop();
+
+            _logger.LogInformation(
+                "AI reasoning completed for JobId {JobId} in {ElapsedMs} ms",
+                jobId,
+                stopwatch.ElapsedMilliseconds);
+
             var textPart = response.Value.Content
                 .FirstOrDefault(p => p.Kind == ChatMessageContentPartKind.Text);
 
@@ -85,13 +106,13 @@ public sealed class InsightReasoningAgent
                     "AI response did not contain valid text content.");
             }
 
-            var content = textPart.Text;
+            var rawJson = textPart.Text;
 
-            // Validate JSON by parsing
-            using var document = JsonDocument.Parse(content);
+            // Validate JSON
+            using var _ = JsonDocument.Parse(rawJson);
 
             var parsed = JsonSerializer.Deserialize<LLMInsightResponse>(
-                content,
+                rawJson,
                 new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
@@ -100,30 +121,49 @@ public sealed class InsightReasoningAgent
             if (parsed is null)
                 throw new InvalidOperationException("Failed to parse AI JSON response");
 
-            // Log token usage (if available)
-            if (response.Value.Usage != null)
-            {
-                _logger.LogInformation(
-                    "OpenAI usage - InputTokens: {Input}, OutputTokens: {Output}, TotalTokens: {Total}",
-                    response.Value.Usage.InputTokenCount,
-                    response.Value.Usage.OutputTokenCount,
-                    response.Value.Usage.TotalTokenCount);
-            }
-
-            return new BusinessInsightsV1(
+            var structured = new BusinessInsightsV1(
                 ExecutiveSummary: parsed.ExecutiveSummary ?? string.Empty,
                 KeyRisks: parsed.KeyRisks ?? Array.Empty<string>(),
                 Opportunities: parsed.Opportunities ?? Array.Empty<string>(),
                 Recommendations: parsed.Recommendations ?? Array.Empty<string>(),
                 GeneratedAt: DateTimeOffset.UtcNow
             );
+
+            // Persist to database
+            await _insightStore.SaveAsync(
+                jobId,
+                structured,
+                rawJson,
+                structured.GeneratedAt,
+                PromptVersion,
+                _deploymentName,
+                response.Value.Usage?.InputTokenCount,
+                response.Value.Usage?.OutputTokenCount,
+                response.Value.Usage?.TotalTokenCount,
+                ct);
+
+            // Debug-level token telemetry
+            if (response.Value.Usage != null)
+            {
+                _logger.LogDebug(
+                    "OpenAI usage for JobId {JobId} - Input: {Input}, Output: {Output}, Total: {Total}",
+                    jobId,
+                    response.Value.Usage.InputTokenCount,
+                    response.Value.Usage.OutputTokenCount,
+                    response.Value.Usage.TotalTokenCount);
+            }
+
+            return structured;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Insight reasoning failed.");
+            _logger.LogError(
+                ex,
+                "Insight reasoning failed for JobId {JobId}",
+                jobId);
 
             return new BusinessInsightsV1(
-                ExecutiveSummary: "Insights generation pending.",
+                ExecutiveSummary: "Insights generation temporarily unavailable.",
                 KeyRisks: Array.Empty<string>(),
                 Opportunities: Array.Empty<string>(),
                 Recommendations: Array.Empty<string>(),
