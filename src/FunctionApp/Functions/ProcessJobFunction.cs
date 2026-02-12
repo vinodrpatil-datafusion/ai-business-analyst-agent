@@ -47,14 +47,16 @@ public sealed class ProcessJobFunction
     [OpenApiResponseWithoutBody(HttpStatusCode.NotFound)]
     [OpenApiResponseWithoutBody(HttpStatusCode.Conflict)]
     public async Task<HttpResponseData> RunAsync(
-        [HttpTrigger(AuthorizationLevel.Function, "post", Route = "jobs/{jobId:guid}/process")]
-        HttpRequestData request,
-        Guid jobId,
-        FunctionContext context)
+    [HttpTrigger(AuthorizationLevel.Function, "post", Route = "jobs/{jobId:guid}/process")]
+    HttpRequestData request,
+    Guid jobId,
+    FunctionContext context)
     {
         var ct = context.CancellationToken;
 
-        // 1️ Check job exists
+        // ------------------------------------------------------------
+        // 1. Validate job existence
+        // ------------------------------------------------------------
         var jobStatus = await _jobStore.GetStatusAsync(jobId, ct);
 
         if (jobStatus.Status == "NotFound")
@@ -64,7 +66,9 @@ public sealed class ProcessJobFunction
             return notFound;
         }
 
-        // 2️ Idempotency: reject if already completed
+        // ------------------------------------------------------------
+        // 2. Idempotency guard (prevent reprocessing completed jobs)
+        // ------------------------------------------------------------
         if (jobStatus.Status == "Completed")
         {
             var conflict = request.CreateResponse(HttpStatusCode.Conflict);
@@ -72,33 +76,59 @@ public sealed class ProcessJobFunction
             return conflict;
         }
 
-        // 3️ Concurrency-safe atomic transition Pending → Processing
+        // ------------------------------------------------------------
+        // 3. Concurrency-safe transition: Pending → Processing
+        //    (Atomic SQL update prevents race conditions)
+        // ------------------------------------------------------------
         var locked = await _jobStore.TryMarkProcessingAsync(jobId, ct);
 
         if (!locked)
         {
             var conflict = request.CreateResponse(HttpStatusCode.Conflict);
-            await conflict.WriteStringAsync("Job is already being processed.");
+            await conflict.WriteStringAsync("Job already being processed.");
             return conflict;
         }
 
+        // ------------------------------------------------------------
+        // 4. Apply execution timeout safeguard (90 seconds)
+        // ------------------------------------------------------------
+        using var timeoutCts =
+            CancellationTokenSource.CreateLinkedTokenSource(ct);
+
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(90));
+
         try
         {
-            // 4️ Retrieve BlobPath
-            var blobPath = await _jobStore.GetBlobPathAsync(jobId, ct);
+            // ------------------------------------------------------------
+            // 5. Resolve BlobPath (authoritative input source)
+            // ------------------------------------------------------------
+            var blobPath =
+                await _jobStore.GetBlobPathAsync(jobId, timeoutCts.Token);
 
             if (string.IsNullOrWhiteSpace(blobPath))
-                throw new InvalidOperationException("BlobPath not found for job.");
+                throw new InvalidOperationException("BlobPath missing.");
 
-            // 5️ Deterministic signal extraction
-            var signals = await _signalAgent.ExecuteAsync(blobPath, ct);
-            await _signalStore.SaveAsync(jobId, signals, ct);
+            // ------------------------------------------------------------
+            // 6. Deterministic signal extraction
+            //    (Raw data is never sent directly to the LLM)
+            // ------------------------------------------------------------
+            var signals =
+                await _signalAgent.ExecuteAsync(blobPath, timeoutCts.Token);
 
-            // 6️ AI reasoning (agent persists insights internally)
-            await _insightAgent.ExecuteAsync((jobId, signals), ct);
+            await _signalStore.SaveAsync(jobId, signals, timeoutCts.Token);
 
-            // 7️ Mark Completed
-            await _jobStore.UpdateStatusAsync(jobId, "Completed", ct);
+            // ------------------------------------------------------------
+            // 7. AI reasoning (InsightReasoningAgent persists insights)
+            // ------------------------------------------------------------
+            await _insightAgent.ExecuteAsync(
+                (jobId, signals),
+                timeoutCts.Token);
+
+            // ------------------------------------------------------------
+            // 8. Mark job as Completed
+            //    (Also records execution duration in DB)
+            // ------------------------------------------------------------
+            await _jobStore.MarkCompletedAsync(jobId, timeoutCts.Token);
 
             var accepted = request.CreateResponse(HttpStatusCode.Accepted);
             await accepted.WriteStringAsync("Job processed successfully.");
@@ -106,7 +136,10 @@ public sealed class ProcessJobFunction
         }
         catch
         {
-            await _jobStore.UpdateStatusAsync(jobId, "Failed", ct);
+            // ------------------------------------------------------------
+            // 9. Failure handling (records duration if started)
+            // ------------------------------------------------------------
+            await _jobStore.MarkFailedAsync(jobId, ct);
             throw;
         }
     }

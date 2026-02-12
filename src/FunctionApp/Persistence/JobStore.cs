@@ -133,12 +133,13 @@ public sealed class JobStore
     /// otherwise <c>false</c> if the job was not in the expected 'Pending' state or another caller won the race.
     /// </returns>
     public async Task<bool> TryMarkProcessingAsync(
-    Guid jobId,
-    CancellationToken cancellationToken)
+        Guid jobId,
+        CancellationToken cancellationToken)
     {
         const string sql = @"
         UPDATE Jobs
         SET Status = 'Processing',
+            ProcessingStartedAt = SYSDATETIMEOFFSET(),
             LastUpdatedAt = SYSDATETIMEOFFSET()
         WHERE JobId = @JobId
           AND Status = 'Pending';";
@@ -152,10 +153,64 @@ public sealed class JobStore
 
         var affected = await cmd.ExecuteNonQueryAsync(cancellationToken);
 
-        // Only one caller will get 1 row affected.
         return affected == 1;
     }
 
+    public async Task MarkCompletedAsync(
+    Guid jobId,
+    CancellationToken cancellationToken)
+    {
+        const string sql = @"
+        UPDATE Jobs
+        SET Status = 'Completed',
+            ProcessingCompletedAt = SYSDATETIMEOFFSET(),
+            ProcessingDurationMs = DATEDIFF(
+                MILLISECOND,
+                ProcessingStartedAt,
+                SYSDATETIMEOFFSET()
+            ),
+            LastUpdatedAt = SYSDATETIMEOFFSET()
+        WHERE JobId = @JobId;";
+
+        using var conn = new SqlConnection(_connectionString);
+        using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.AddWithValue("@JobId", jobId);
+
+        await conn.OpenAsync(cancellationToken);
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    public async Task MarkFailedAsync(
+    Guid jobId,
+    CancellationToken cancellationToken)
+    {
+        const string sql = @"
+        UPDATE Jobs
+        SET Status = 'Failed',
+            ProcessingCompletedAt = SYSDATETIMEOFFSET(),
+            ProcessingDurationMs = CASE
+                WHEN ProcessingStartedAt IS NOT NULL
+                THEN DATEDIFF(
+                    MILLISECOND,
+                    ProcessingStartedAt,
+                    SYSDATETIMEOFFSET()
+                )
+                ELSE NULL
+            END,
+            LastUpdatedAt = SYSDATETIMEOFFSET()
+        WHERE JobId = @JobId;";
+
+        using var conn = new SqlConnection(_connectionString);
+        using var cmd = new SqlCommand(sql, conn);
+
+        cmd.Parameters.AddWithValue("@JobId", jobId);
+
+        await conn.OpenAsync(cancellationToken);
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
+    }
 
     public async Task<string?> GetBlobPathAsync(
     Guid jobId,

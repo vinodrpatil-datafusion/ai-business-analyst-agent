@@ -28,7 +28,10 @@ CREATE TABLE Jobs (
 
     -- Audit fields
     SubmittedAt DATETIMEOFFSET NOT NULL,
-    LastUpdatedAt DATETIMEOFFSET NOT NULL
+    LastUpdatedAt DATETIMEOFFSET NOT NULL,
+    ProcessingStartedAt DATETIMEOFFSET NULL,
+    ProcessingCompletedAt DATETIMEOFFSET NULL,
+    ProcessingDurationMs INT NULL
 );
 
 -- Indexes for operational queries
