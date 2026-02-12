@@ -1,5 +1,7 @@
 ﻿using Contracts.Invocation;
 using Contracts.Jobs;
+using FunctionApp.Persistence;
+using Microsoft.Extensions.Logging;
 
 namespace FunctionApp.Agents;
 
@@ -8,25 +10,50 @@ namespace FunctionApp.Agents;
 /// status of a job and whether insights are available.
 /// </summary>
 public sealed class JobStatusQueryAgent
-    : IAgent<Guid, JobStatusResponseV1>
+    : IAgent<Guid, JobStatusResponseV1?>
 {
-    public Task<JobStatusResponseV1> ExecuteAsync(
+    private readonly JobStore _jobStore;
+    private readonly ILogger<JobStatusQueryAgent> _logger;
+
+    public JobStatusQueryAgent(
+        JobStore jobStore,
+        ILogger<JobStatusQueryAgent> logger)
+    {
+        _jobStore = jobStore;
+        _logger = logger;
+    }
+
+    /// <summary>
+    /// Retrieves the current persisted job status from storage.
+    /// Returns null if the job does not exist.
+    /// </summary>
+    public async Task<JobStatusResponseV1?> ExecuteAsync(
         Guid jobId,
         CancellationToken cancellationToken = default)
     {
-        // TODO:
-        // - Query Jobs table
-        // - Check if insights exist
-        // - Map to JobStatusResponseV1
+        _logger.LogInformation(
+            "Querying job status for JobId {JobId}",
+            jobId);
 
-        var response = new JobStatusResponseV1(
-            JobId: jobId,
-            Status: JobStatuses.Pending,
-            LastUpdatedAt: DateTimeOffset.UtcNow,
-            SubmittedAt: DateTimeOffset.UtcNow,
-            InsightsAvailable: false
-        );
+        var result = await _jobStore.GetStatusAsync(
+            jobId,
+            cancellationToken);
 
-        return Task.FromResult(response);
+        if (result is null)
+        {
+            _logger.LogWarning(
+                "JobId {JobId} not found in database",
+                jobId);
+
+            return null;
+        }
+
+        _logger.LogInformation(
+            "JobId {JobId} status: {Status}, InsightsAvailable: {Insights}",
+            jobId,
+            result.Status,
+            result.InsightsAvailable);
+
+        return result;
     }
 }
