@@ -29,5 +29,21 @@ public sealed class BlobFileReader
 
         return await reader.ReadToEndAsync(cancellationToken);
     }
+
+    public async Task<Stream> ReadStreamAsync(string containerName, string blobPath, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(containerName))
+            throw new ArgumentException("containerName cannot be null or whitespace.", nameof(containerName));
+
+        if (string.IsNullOrWhiteSpace(blobPath))
+            throw new ArgumentException("blobPath cannot be null or whitespace.", nameof(blobPath));
+
+        var containerClient = _blobServiceClient.GetBlobContainerClient(containerName);
+        var blobClient = containerClient.GetBlobClient(blobPath);
+
+        // Download streaming; caller is responsible for disposing the returned stream.
+        var response = await blobClient.DownloadStreamingAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+        return response.Value.Content;
+    }
 }
 
