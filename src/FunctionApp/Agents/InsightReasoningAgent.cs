@@ -197,7 +197,11 @@ public sealed class InsightReasoningAgent
             .Replace("{{NumericAverages}}",
                 JsonSerializer.Serialize(signals.NumericAverages))
             .Replace("{{CategoryCounts}}",
-                JsonSerializer.Serialize(signals.CategoryCounts));
+                JsonSerializer.Serialize(signals.CategoryCounts))
+            .Replace("{{ColumnMetadata}}", 
+                JsonSerializer.Serialize(signals.ColumnMetadata))
+            .Replace("{{DetectedAnomalies}}", 
+                JsonSerializer.Serialize(signals.DetectedAnomalies));
     }
 
     private sealed class LLMInsightResponse
