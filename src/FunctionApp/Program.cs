@@ -11,8 +11,14 @@ using Microsoft.Extensions.Hosting;
 
 namespace FunctionApp;
 
+/// <summary>
+/// Host builder for the FunctionApp. Configures DI, telemetry and agents.
+/// </summary>
 public class Program
 {
+    /// <summary>
+    /// Application entry point. Builds and runs the Functions worker host.
+    /// </summary>
     public static void Main(string[] args)
     {
         var host = new HostBuilder()
@@ -40,8 +46,9 @@ public class Program
                     IAgent<(Guid JobId, BusinessSignalsV1 Signals), BusinessInsightsV1>,
                     InsightReasoningAgent>();
 
+                // Implementation returns nullable JobStatusResponseV1?, so register with nullable TResponse
                 services.AddSingleton<
-                    IAgent<Guid, JobStatusResponseV1>,
+                    IAgent<Guid, JobStatusResponseV1?>,
                     JobStatusQueryAgent>();
 
                 // ------------------------------------------------------------
