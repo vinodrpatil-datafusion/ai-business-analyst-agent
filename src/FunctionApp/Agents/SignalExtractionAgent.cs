@@ -2,7 +2,6 @@
 using FunctionApp.Analysis;
 using FunctionApp.Parsing;
 using Microsoft.Extensions.Logging;
-using System.Collections.Concurrent;
 
 namespace FunctionApp.Agents;
 
@@ -13,7 +12,7 @@ namespace FunctionApp.Agents;
 /// - Inferring schema & column types
 /// - Computing statistical metadata
 /// - Detecting anomalies
-/// 
+///
 /// Raw data is NEVER passed directly to the LLM.
 /// Only structured, deterministic signals are returned.
 /// </summary>
@@ -72,100 +71,91 @@ public sealed class SignalExtractionAgent
             throw new InvalidOperationException("Parsed file contains zero rows.");
 
         // ------------------------------------------------------------
-        // Thread-safe collections for parallel column analysis
+        // 2. Sequential column-level deterministic analysis
         // ------------------------------------------------------------
-        var numericTotals = new ConcurrentDictionary<string, decimal>();
-        var numericAverages = new ConcurrentDictionary<string, decimal>();
-        var categoryCounts = new ConcurrentDictionary<string, int>();
-        var metadata = new ConcurrentDictionary<string, ColumnMetadataV1>();
-        var anomalies = new ConcurrentBag<string>();
+        var numericTotals = new Dictionary<string, decimal>();
+        var numericAverages = new Dictionary<string, decimal>();
+        var categoryCounts = new Dictionary<string, int>();
+        var metadata = new Dictionary<string, ColumnMetadataV1>();
+        var anomalies = new List<string>();
 
         var firstRow = rows.First();
 
-        // ------------------------------------------------------------
-        // 2. Parallel column-level deterministic analysis
-        // ------------------------------------------------------------
-        Parallel.ForEach(
-            firstRow.Keys,
-            new ParallelOptions
+        foreach (var column in firstRow.Keys)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var values = rows
+                .Select(r => r.TryGetValue(column, out var v) ? v : string.Empty)
+                .ToList();
+
+            var inferredType = ColumnTypeInference.Infer(values);
+
+            var nullCount = values.Count(v =>
+                string.IsNullOrWhiteSpace(v));
+
+            var uniqueCount = values
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Distinct()
+                .Count();
+
+            if (inferredType == InferredColumnType.Numeric)
             {
-                CancellationToken = cancellationToken
-            },
-            column =>
+                var stats = ColumnStatisticsCalculator
+                    .ComputeNumeric(values);
+
+                if (stats.Total.HasValue)
+                    numericTotals[column] = stats.Total.Value;
+
+                if (stats.Average.HasValue)
+                    numericAverages[column] = stats.Average.Value;
+
+                foreach (var anomaly in AnomalyDetector
+                    .DetectNumericOutliers(column, stats.ParsedValues))
+                {
+                    anomalies.Add(anomaly);
+                }
+
+                metadata[column] = new ColumnMetadataV1(
+                    ColumnName: column,
+                    InferredType: "Numeric",
+                    NullCount: nullCount,
+                    UniqueCount: uniqueCount,
+                    Min: stats.Min,
+                    Max: stats.Max,
+                    Average: stats.Average);
+            }
+            else if (inferredType == InferredColumnType.Categorical)
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var values = rows
-                    .Select(r => r.TryGetValue(column, out var v) ? v : string.Empty)
-                    .ToList();
-
-                var inferredType = ColumnTypeInference.Infer(values);
-
-                var nullCount = values.Count(v =>
-                    string.IsNullOrWhiteSpace(v));
-
-                var uniqueCount = values
+                foreach (var group in values
                     .Where(v => !string.IsNullOrWhiteSpace(v))
-                    .Distinct()
-                    .Count();
-
-                if (inferredType == InferredColumnType.Numeric)
+                    .GroupBy(v => v))
                 {
-                    var stats = ColumnStatisticsCalculator
-                        .ComputeNumeric(values);
-
-                    if (stats.Total.HasValue)
-                        numericTotals[column] = stats.Total.Value;
-
-                    if (stats.Average.HasValue)
-                        numericAverages[column] = stats.Average.Value;
-
-                    foreach (var anomaly in AnomalyDetector
-                        .DetectNumericOutliers(column, stats.ParsedValues))
-                    {
-                        anomalies.Add(anomaly);
-                    }
-
-                    metadata[column] = new ColumnMetadataV1(
-                        ColumnName: column,
-                        InferredType: "Numeric",
-                        NullCount: nullCount,
-                        UniqueCount: uniqueCount,
-                        Min: stats.Min,
-                        Max: stats.Max,
-                        Average: stats.Average);
+                    categoryCounts[$"{column}:{group.Key}"] =
+                        group.Count();
                 }
-                else if (inferredType == InferredColumnType.Categorical)
-                {
-                    foreach (var group in values
-                        .Where(v => !string.IsNullOrWhiteSpace(v))
-                        .GroupBy(v => v))
-                    {
-                        categoryCounts[$"{column}:{group.Key}"] =
-                            group.Count();
-                    }
 
-                    metadata[column] = new ColumnMetadataV1(
-                        ColumnName: column,
-                        InferredType: "Categorical",
-                        NullCount: nullCount,
-                        UniqueCount: uniqueCount,
-                        Min: null,
-                        Max: null,
-                        Average: null);
-                }
-                else
-                {
-                    metadata[column] = new ColumnMetadataV1(
-                        ColumnName: column,
-                        InferredType: inferredType.ToString(),
-                        NullCount: nullCount,
-                        UniqueCount: uniqueCount,
-                        Min: null,
-                        Max: null,
-                        Average: null);
-                }
-            });
+                metadata[column] = new ColumnMetadataV1(
+                    ColumnName: column,
+                    InferredType: "Categorical",
+                    NullCount: nullCount,
+                    UniqueCount: uniqueCount,
+                    Min: null,
+                    Max: null,
+                    Average: null);
+            }
+            else
+            {
+                metadata[column] = new ColumnMetadataV1(
+                    ColumnName: column,
+                    InferredType: inferredType.ToString(),
+                    NullCount: nullCount,
+                    UniqueCount: uniqueCount,
+                    Min: null,
+                    Max: null,
+                    Average: null);
+            }
+        }
 
         _logger.LogInformation(
             "Signal extraction completed for {BlobPath}. NumericColumns: {NumericCount}, AnomaliesDetected: {AnomalyCount}",
@@ -180,7 +170,7 @@ public sealed class SignalExtractionAgent
             NumericTotals: numericTotals,
             CategoryCounts: categoryCounts,
             ColumnMetadata: metadata,
-            DetectedAnomalies: anomalies.ToList()
+            DetectedAnomalies: anomalies
         );
     }
 }
