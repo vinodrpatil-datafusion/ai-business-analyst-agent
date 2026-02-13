@@ -1,20 +1,14 @@
-﻿You are a senior business analyst.
+﻿You are an executive business analyst.
 
-Analyze the structured business signals below and generate executive-level insights.
+Analyze the structured business signals below and produce:
 
-Return ONLY valid JSON matching this schema:
+- ExecutiveSummary (concise, board-level)
+- KeyRisks (array)
+- Opportunities (array)
+- Recommendations (array)
 
-{
-  "executiveSummary": "string",
-  "keyRisks": ["string"],
-  "opportunities": ["string"],
-  "recommendations": ["string"]
-}
-
-Business Signals:
-
-Record Count:
-{{RecordCount}}
+Business Overview:
+- RecordCount: {{RecordCount}}
 
 Numeric Totals:
 {{NumericTotals}}
@@ -22,7 +16,16 @@ Numeric Totals:
 Numeric Averages:
 {{NumericAverages}}
 
-Category Counts:
-{{CategoryCounts}}
+Column Metadata:
+{{ColumnMetadata}}
 
-Do not include explanations outside JSON.
+Detected Anomalies:
+{{DetectedAnomalies}}
+
+Respond ONLY as valid JSON:
+{
+  "ExecutiveSummary": "...",
+  "KeyRisks": [],
+  "Opportunities": [],
+  "Recommendations": []
+}

@@ -1,133 +1,186 @@
 ﻿using Contracts.Signals;
+using FunctionApp.Analysis;
 using FunctionApp.Parsing;
 using Microsoft.Extensions.Logging;
-using System.Diagnostics;
-using System.Globalization;
+using System.Collections.Concurrent;
 
 namespace FunctionApp.Agents;
 
+/// <summary>
+/// Deterministic signal extraction agent.
+/// Responsible for:
+/// - Reading structured files from Blob Storage
+/// - Inferring schema & column types
+/// - Computing statistical metadata
+/// - Detecting anomalies
+/// 
+/// Raw data is NEVER passed directly to the LLM.
+/// Only structured, deterministic signals are returned.
+/// </summary>
 public sealed class SignalExtractionAgent
     : IAgent<string, BusinessSignalsV1>
 {
     private readonly BlobFileReader _blobReader;
+    private readonly FileParserFactory _parserFactory;
     private readonly ILogger<SignalExtractionAgent> _logger;
-
-    private const string ContainerName = "uploads";
 
     public SignalExtractionAgent(
         BlobFileReader blobReader,
+        FileParserFactory parserFactory,
         ILogger<SignalExtractionAgent> logger)
     {
         _blobReader = blobReader;
+        _parserFactory = parserFactory;
         _logger = logger;
     }
 
     public async Task<BusinessSignalsV1> ExecuteAsync(
         string blobPath,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
-        var stopwatch = Stopwatch.StartNew();
+        if (string.IsNullOrWhiteSpace(blobPath))
+            throw new ArgumentException("BlobPath cannot be empty.", nameof(blobPath));
 
         _logger.LogInformation(
-            "Starting deterministic signal extraction for blob {BlobPath}",
+            "Starting deterministic signal extraction for BlobPath {BlobPath}",
             blobPath);
 
-        try
-        {
-            var fileContent = await _blobReader.ReadTextAsync(
-                ContainerName,
-                blobPath,
-                cancellationToken);
+        const string container = "uploads";
 
-            var lines = fileContent
-                .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries);
+        // ------------------------------------------------------------
+        // 1. Read file stream from Blob Storage
+        // ------------------------------------------------------------
+        await using var stream = await _blobReader.ReadStreamAsync(
+            container,
+            blobPath,
+            cancellationToken);
 
-            if (lines.Length < 2)
-                throw new InvalidOperationException("File contains no data rows.");
+        var parser = _parserFactory.Create(blobPath);
 
-            var headers = lines[0].Split(',');
+        var rows = await parser.ParseAsync(stream, cancellationToken);
 
-            var numericTotals = new Dictionary<string, decimal>();
-            var numericCounts = new Dictionary<string, int>();
-            var categoryCounts = new Dictionary<string, int>();
+        SchemaValidator.Validate(rows);
 
-            var recordCount = 0;
+        var recordCount = rows.Count;
 
-            for (int i = 1; i < lines.Length; i++)
+        _logger.LogInformation(
+            "Parsed {RecordCount} records from {BlobPath}",
+            recordCount,
+            blobPath);
+
+        if (recordCount == 0)
+            throw new InvalidOperationException("Parsed file contains zero rows.");
+
+        // ------------------------------------------------------------
+        // Thread-safe collections for parallel column analysis
+        // ------------------------------------------------------------
+        var numericTotals = new ConcurrentDictionary<string, decimal>();
+        var numericAverages = new ConcurrentDictionary<string, decimal>();
+        var categoryCounts = new ConcurrentDictionary<string, int>();
+        var metadata = new ConcurrentDictionary<string, ColumnMetadataV1>();
+        var anomalies = new ConcurrentBag<string>();
+
+        var firstRow = rows.First();
+
+        // ------------------------------------------------------------
+        // 2. Parallel column-level deterministic analysis
+        // ------------------------------------------------------------
+        Parallel.ForEach(
+            firstRow.Keys,
+            new ParallelOptions
             {
-                var values = lines[i].Split(',');
+                CancellationToken = cancellationToken
+            },
+            column =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
 
-                if (values.Length != headers.Length)
-                    continue;
+                var values = rows
+                    .Select(r => r.TryGetValue(column, out var v) ? v : string.Empty)
+                    .ToList();
 
-                recordCount++;
+                var inferredType = ColumnTypeInference.Infer(values);
 
-                for (int col = 0; col < headers.Length; col++)
+                var nullCount = values.Count(v =>
+                    string.IsNullOrWhiteSpace(v));
+
+                var uniqueCount = values
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Distinct()
+                    .Count();
+
+                if (inferredType == InferredColumnType.Numeric)
                 {
-                    var header = headers[col].Trim();
-                    var value = values[col].Trim();
+                    var stats = ColumnStatisticsCalculator
+                        .ComputeNumeric(values);
 
-                    // Numeric detection
-                    if (decimal.TryParse(
-                        value,
-                        NumberStyles.Any,
-                        CultureInfo.InvariantCulture,
-                        out var number))
+                    if (stats.Total.HasValue)
+                        numericTotals[column] = stats.Total.Value;
+
+                    if (stats.Average.HasValue)
+                        numericAverages[column] = stats.Average.Value;
+
+                    foreach (var anomaly in AnomalyDetector
+                        .DetectNumericOutliers(column, stats.ParsedValues))
                     {
-                        numericTotals[header] =
-                            numericTotals.TryGetValue(header, out var existing)
-                                ? existing + number
-                                : number;
-
-                        numericCounts[header] =
-                            numericCounts.TryGetValue(header, out var count)
-                                ? count + 1
-                                : 1;
+                        anomalies.Add(anomaly);
                     }
-                    else
-                    {
-                        // Basic category aggregation
-                        var key = $"{header}:{value}";
 
-                        categoryCounts[key] =
-                            categoryCounts.TryGetValue(key, out var count)
-                                ? count + 1
-                                : 1;
-                    }
+                    metadata[column] = new ColumnMetadataV1(
+                        ColumnName: column,
+                        InferredType: "Numeric",
+                        NullCount: nullCount,
+                        UniqueCount: uniqueCount,
+                        Min: stats.Min,
+                        Max: stats.Max,
+                        Average: stats.Average);
                 }
-            }
+                else if (inferredType == InferredColumnType.Categorical)
+                {
+                    foreach (var group in values
+                        .Where(v => !string.IsNullOrWhiteSpace(v))
+                        .GroupBy(v => v))
+                    {
+                        categoryCounts[$"{column}:{group.Key}"] =
+                            group.Count();
+                    }
 
-            var numericAverages = numericTotals.ToDictionary(
-                kvp => kvp.Key,
-                kvp =>
-                    numericCounts.TryGetValue(kvp.Key, out var count) && count > 0
-                        ? kvp.Value / count
-                        : 0);
+                    metadata[column] = new ColumnMetadataV1(
+                        ColumnName: column,
+                        InferredType: "Categorical",
+                        NullCount: nullCount,
+                        UniqueCount: uniqueCount,
+                        Min: null,
+                        Max: null,
+                        Average: null);
+                }
+                else
+                {
+                    metadata[column] = new ColumnMetadataV1(
+                        ColumnName: column,
+                        InferredType: inferredType.ToString(),
+                        NullCount: nullCount,
+                        UniqueCount: uniqueCount,
+                        Min: null,
+                        Max: null,
+                        Average: null);
+                }
+            });
 
-            stopwatch.Stop();
+        _logger.LogInformation(
+            "Signal extraction completed for {BlobPath}. NumericColumns: {NumericCount}, AnomaliesDetected: {AnomalyCount}",
+            blobPath,
+            numericTotals.Count,
+            anomalies.Count);
 
-            _logger.LogInformation(
-                "Signal extraction completed for blob {BlobPath} in {ElapsedMs} ms. Records: {Count}",
-                blobPath,
-                stopwatch.ElapsedMilliseconds,
-                recordCount);
-
-            return new BusinessSignalsV1(
-                RecordCount: recordCount,
-                NumericAverages: numericAverages,
-                NumericTotals: numericTotals,
-                CategoryCounts: categoryCounts,
-                GeneratedAt: DateTimeOffset.UtcNow
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(
-                ex,
-                "Signal extraction failed for blob {BlobPath}",
-                blobPath);
-
-            throw; // Let ProcessJobFunction mark job as Failed
-        }
+        return new BusinessSignalsV1(
+            RecordCount: recordCount,
+            GeneratedAt: DateTimeOffset.UtcNow,
+            NumericAverages: numericAverages,
+            NumericTotals: numericTotals,
+            CategoryCounts: categoryCounts,
+            ColumnMetadata: metadata,
+            DetectedAnomalies: anomalies.ToList()
+        );
     }
 }

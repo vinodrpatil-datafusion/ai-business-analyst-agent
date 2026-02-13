@@ -5,50 +5,76 @@ using FunctionApp.Agents;
 using FunctionApp.Parsing;
 using FunctionApp.Persistence;
 using Microsoft.Azure.Functions.Worker;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
-namespace FunctionApp
+namespace FunctionApp;
+
+public class Program
 {
-    public class Program
+    public static void Main(string[] args)
     {
-        static void Main(string[] args)
-        {
-            var host = new HostBuilder()
-                .ConfigureFunctionsWorkerDefaults()
-                .ConfigureServices(services =>
-                {
-                    // Application Insights for observability
-                    services.AddApplicationInsightsTelemetryWorkerService();
-                    services.ConfigureFunctionsApplicationInsights();
+        var host = new HostBuilder()
+            .ConfigureFunctionsWorkerDefaults()
+            .ConfigureAppConfiguration(config =>
+            {
+                // Ensures local.settings.json + Azure App Settings are available
+                config.AddEnvironmentVariables();
+            })
+            .ConfigureServices((context, services) =>
+            {
+                var configuration = context.Configuration;
 
-                    // Agent registrations (agent-oriented architecture)
-                    services.AddSingleton<IAgent<string, BusinessSignalsV1>, SignalExtractionAgent>();
-                    services.AddSingleton<IAgent<(Guid JobId, BusinessSignalsV1 Signals), BusinessInsightsV1>,
-                                 InsightReasoningAgent>();
-                    services.AddSingleton<IAgent<Guid, JobStatusResponseV1>, JobStatusQueryAgent>();
+                // ------------------------------------------------------------
+                // Observability
+                // ------------------------------------------------------------
+                services.AddApplicationInsightsTelemetryWorkerService();
+                services.ConfigureFunctionsApplicationInsights();
 
-                    services.AddSingleton(sp =>
-                        new BlobFileReader(
-                            Environment.GetEnvironmentVariable("BlobConnectionString")!));
+                // ------------------------------------------------------------
+                // Agent registrations (agent-oriented architecture)
+                // ------------------------------------------------------------
+                services.AddSingleton<IAgent<string, BusinessSignalsV1>, SignalExtractionAgent>();
+                services.AddSingleton<
+                    IAgent<(Guid JobId, BusinessSignalsV1 Signals), BusinessInsightsV1>,
+                    InsightReasoningAgent>();
 
+                services.AddSingleton<
+                    IAgent<Guid, JobStatusResponseV1>,
+                    JobStatusQueryAgent>();
 
-                    services.AddSingleton(sp =>
-                        new JobStore(
-                            Environment.GetEnvironmentVariable("SqlConnectionString")!));
+                // ------------------------------------------------------------
+                // File parsing infrastructure
+                // ------------------------------------------------------------
+                services.AddSingleton<CsvFileParser>();
+                services.AddSingleton<ExcelFileParser>();
+                services.AddSingleton<FileParserFactory>();
 
-                    services.AddSingleton(sp =>
-                        new SignalStore(
-                            Environment.GetEnvironmentVariable("SqlConnectionString")!));
+                // ------------------------------------------------------------
+                // Blob infrastructure
+                // ------------------------------------------------------------
+                var blobConnection =
+                    configuration["BlobConnectionString"]
+                    ?? throw new InvalidOperationException(
+                        "BlobConnectionString is not configured.");
 
-                    services.AddSingleton(sp =>
-                        new InsightStore(
-                            Environment.GetEnvironmentVariable("SqlConnectionString")!));
+                services.AddSingleton(new BlobFileReader(blobConnection));
 
-                })
-                .Build();
+                // ------------------------------------------------------------
+                // Database infrastructure
+                // ------------------------------------------------------------
+                var sqlConnection =
+                    configuration["SqlConnectionString"]
+                    ?? throw new InvalidOperationException(
+                        "SqlConnectionString is not configured.");
 
-            host.Run();
-        }
+                services.AddSingleton(new JobStore(sqlConnection));
+                services.AddSingleton(new SignalStore(sqlConnection));
+                services.AddSingleton(new InsightStore(sqlConnection));
+            })
+            .Build();
+
+        host.Run();
     }
 }
