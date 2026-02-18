@@ -20,7 +20,7 @@ public sealed class InsightReasoningAgent
     private readonly InsightStore _insightStore;
     private readonly string _deploymentName;
 
-    private const string PromptVersion = "v1.0";
+    private const string PromptVersion = "v1.1";
     private const int MaxResponseLength = 100_000;
     private const int MaxSafePromptTokens = 6000;
 
