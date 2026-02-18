@@ -177,9 +177,12 @@ public sealed class InsightReasoningAgent
                     GeneratedAt: DateTimeOffset.UtcNow
                 );
 
+                var summaryJson = JsonSerializer.Serialize(summary);
+
                 await _insightStore.SaveAsync(
                     jobId,
                     structured,
+                    summaryJson,
                     rawJson,
                     structured.GeneratedAt,
                     PromptVersion,

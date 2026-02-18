@@ -16,6 +16,7 @@ public sealed class InsightStore
     public async Task SaveAsync(
     Guid jobId,
     object structuredInsights,
+    string? summaryJson,
     string rawResponse,
     DateTimeOffset generatedAt,
     string promptVersion,
@@ -26,9 +27,11 @@ public sealed class InsightStore
     CancellationToken ct)
     {
         const string sql = @"
-            INSERT INTO BusinessInsights (
+            INSERT INTO BusinessInsights
+            (
                 JobId,
                 InsightsJson,
+                SummaryJson,
                 RawResponse,
                 GeneratedAt,
                 PromptVersion,
@@ -37,9 +40,11 @@ public sealed class InsightStore
                 OutputTokens,
                 TotalTokens
             )
-            VALUES (
+            VALUES
+            (
                 @JobId,
                 @InsightsJson,
+                @SummaryJson,
                 @RawResponse,
                 @GeneratedAt,
                 @PromptVersion,
@@ -55,6 +60,8 @@ public sealed class InsightStore
         cmd.Parameters.AddWithValue("@JobId", jobId);
         cmd.Parameters.AddWithValue("@InsightsJson",
             JsonSerializer.Serialize(structuredInsights));
+        cmd.Parameters.AddWithValue("@SummaryJson",
+            (object?)summaryJson ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@RawResponse", rawResponse ?? (object)DBNull.Value);
         cmd.Parameters.AddWithValue("@GeneratedAt", generatedAt);
         cmd.Parameters.AddWithValue("@PromptVersion", promptVersion ?? (object)DBNull.Value);

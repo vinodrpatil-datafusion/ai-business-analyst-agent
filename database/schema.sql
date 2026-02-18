@@ -118,6 +118,9 @@ CREATE TABLE BusinessInsights (
     -- Clean, validated output returned to API/UI
     InsightsJson NVARCHAR(MAX) NOT NULL,
 
+    -- Summary used for LLM reasoning (compressed signal view)
+    SummaryJson NVARCHAR(MAX) NULL,
+
     -- Raw LLM JSON response (stored for audit & debugging)
     RawResponse NVARCHAR(MAX) NULL,
 
