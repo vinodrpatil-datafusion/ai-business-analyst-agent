@@ -14,17 +14,20 @@ namespace FunctionApp.Functions;
 public sealed class ProcessJobFunction
 {
     private readonly IAgent<string, BusinessSignalsV1> _signalAgent;
-    private readonly IAgent<(Guid JobId, BusinessSignalsV1 Signals), BusinessInsightsV1> _insightAgent;
+    private readonly InsightSignalSummarizer _summarizer;
+    private readonly IAgent<(Guid JobId, InsightSignalSummaryV1 Summary), BusinessInsightsV1> _insightAgent;
     private readonly JobStore _jobStore;
     private readonly SignalStore _signalStore;
 
     public ProcessJobFunction(
         IAgent<string, BusinessSignalsV1> signalAgent,
-        IAgent<(Guid JobId, BusinessSignalsV1 Signals), BusinessInsightsV1> insightAgent,
+        InsightSignalSummarizer summarizer,
+        IAgent<(Guid JobId, InsightSignalSummaryV1 Summary), BusinessInsightsV1> insightAgent,
         JobStore jobStore,
         SignalStore signalStore)
     {
         _signalAgent = signalAgent;
+        _summarizer = summarizer;
         _insightAgent = insightAgent;
         _jobStore = jobStore;
         _signalStore = signalStore;
@@ -68,7 +71,7 @@ public sealed class ProcessJobFunction
         }
 
         // ------------------------------------------------------------
-        // 2. Idempotency guard (prevent reprocessing completed jobs)
+        // 2. Idempotency guard
         // ------------------------------------------------------------
         if (jobStatus.Status == JobStatuses.Completed)
         {
@@ -90,12 +93,12 @@ public sealed class ProcessJobFunction
         }
 
         // ------------------------------------------------------------
-        // 4. Apply execution timeout safeguard (90 seconds)
+        // 4. Execution timeout safeguard (90 seconds)
         // ------------------------------------------------------------
         using var timeoutCts =
             CancellationTokenSource.CreateLinkedTokenSource(ct);
 
-        //timeoutCts.CancelAfter(TimeSpan.FromSeconds(90));
+        timeoutCts.CancelAfter(TimeSpan.FromSeconds(90));
 
         try
         {
@@ -117,14 +120,19 @@ public sealed class ProcessJobFunction
             await _signalStore.SaveAsync(jobId, signals, timeoutCts.Token);
 
             // ------------------------------------------------------------
-            // 7. AI reasoning
+            // 7. AI-safe summarization layer
+            // ------------------------------------------------------------
+            var summary = _summarizer.Summarize(signals);
+
+            // ------------------------------------------------------------
+            // 8. AI reasoning
             // ------------------------------------------------------------
             await _insightAgent.ExecuteAsync(
-                (jobId, signals),
+                (jobId, summary),
                 timeoutCts.Token);
 
             // ------------------------------------------------------------
-            // 8. Mark job as Completed
+            // 9. Mark job as Completed
             // ------------------------------------------------------------
             await _jobStore.MarkCompletedAsync(jobId, timeoutCts.Token);
 
@@ -135,7 +143,7 @@ public sealed class ProcessJobFunction
         catch
         {
             // ------------------------------------------------------------
-            // 9. Failure handling
+            // 10. Failure handling
             // ------------------------------------------------------------
             await _jobStore.MarkFailedAsync(jobId, ct);
             throw;
