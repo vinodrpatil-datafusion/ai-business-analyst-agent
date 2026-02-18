@@ -1,16 +1,13 @@
 ﻿using Azure;
-using Azure.AI.OpenAI;
 using Contracts.Insights;
 using Contracts.Signals;
+using FunctionApp.Configurations;
 using FunctionApp.Persistence;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using OpenAI.Chat;
 using System.Diagnostics;
 using System.Text.Json;
-using Microsoft.Extensions.Options;
-using FunctionApp.Configurations;
-using System.Linq;
 
 namespace FunctionApp.Agents;
 
@@ -29,38 +26,19 @@ public sealed class InsightReasoningAgent
     private const int MaxResponseLength = 100_000;
 
     public InsightReasoningAgent(
-        IConfiguration config,
+        ChatClient chatClient,
+        string promptTemplate,
+        string deploymentName,
         ILogger<InsightReasoningAgent> logger,
         InsightStore insightStore,
         IOptions<AIExecutionOptions> aiOptions)
     {
+        _chatClient = chatClient ?? throw new ArgumentNullException(nameof(chatClient));
+        _promptTemplate = promptTemplate ?? throw new ArgumentNullException(nameof(promptTemplate));
+        _deploymentName = deploymentName ?? throw new ArgumentNullException(nameof(deploymentName));
+
         _logger = logger;
         _insightStore = insightStore;
-
-        var endpoint = config["AzureOpenAI:Endpoint"]
-            ?? throw new InvalidOperationException("Missing OpenAI endpoint");
-
-        var apiKey = config["AzureOpenAI:ApiKey"]
-            ?? throw new InvalidOperationException("Missing OpenAI API key");
-
-        _deploymentName = config["AzureOpenAI:DeploymentName"]
-            ?? throw new InvalidOperationException("Missing deployment name");
-
-        var client = new AzureOpenAIClient(
-            new Uri(endpoint),
-            new AzureKeyCredential(apiKey));
-
-        _chatClient = client.GetChatClient(_deploymentName);
-
-        var promptPath = Path.Combine(
-            AppContext.BaseDirectory,
-            "Prompts",
-            "insight.prompt.txt");
-
-        if (!File.Exists(promptPath))
-            throw new FileNotFoundException("Prompt file not found", promptPath);
-
-        _promptTemplate = File.ReadAllText(promptPath);
         _aiOptions = aiOptions.Value;
     }
 
