@@ -8,6 +8,9 @@ using Microsoft.Extensions.Logging;
 using OpenAI.Chat;
 using System.Diagnostics;
 using System.Text.Json;
+using Microsoft.Extensions.Options;
+using FunctionApp.Configurations;
+using System.Linq;
 
 namespace FunctionApp.Agents;
 
@@ -18,16 +21,18 @@ public sealed class InsightReasoningAgent
     private readonly string _promptTemplate;
     private readonly ILogger<InsightReasoningAgent> _logger;
     private readonly InsightStore _insightStore;
+    private readonly AIExecutionOptions _aiOptions;
     private readonly string _deploymentName;
 
+    private const int TokenCharRatio = 4;
     private const string PromptVersion = "v1.1";
     private const int MaxResponseLength = 100_000;
-    private const int MaxSafePromptTokens = 6000;
 
     public InsightReasoningAgent(
         IConfiguration config,
         ILogger<InsightReasoningAgent> logger,
-        InsightStore insightStore)
+        InsightStore insightStore,
+        IOptions<AIExecutionOptions> aiOptions)
     {
         _logger = logger;
         _insightStore = insightStore;
@@ -56,6 +61,7 @@ public sealed class InsightReasoningAgent
             throw new FileNotFoundException("Prompt file not found", promptPath);
 
         _promptTemplate = File.ReadAllText(promptPath);
+        _aiOptions = aiOptions.Value;
     }
 
     public async Task<BusinessInsightsV1> ExecuteAsync(
@@ -73,9 +79,16 @@ public sealed class InsightReasoningAgent
                     _deploymentName,
                     PromptVersion);
 
+                ct.ThrowIfCancellationRequested();
+
                 var prompt = BuildPrompt(summary);
 
-                EnforcePromptBudget(prompt);
+                _logger.LogDebug(
+                    "Prompt length chars:{Chars}, approxTokens:{Tokens}",
+                    prompt.Length,
+                    prompt.Length / TokenCharRatio);
+
+                var maxOutputTokens = CalculateAdaptiveOutputTokens(prompt);
 
                 var stopwatch = Stopwatch.StartNew();
 
@@ -90,7 +103,7 @@ public sealed class InsightReasoningAgent
                     new ChatCompletionOptions
                     {
                         Temperature = 0.2f,
-                        MaxOutputTokenCount = 800,
+                        MaxOutputTokenCount = maxOutputTokens,
                         ResponseFormat = ChatResponseFormat.CreateJsonObjectFormat()
                     },
                     cancellationToken: ct
@@ -111,11 +124,36 @@ public sealed class InsightReasoningAgent
 
                 var rawJson = textPart.Text.Trim();
 
+                if (rawJson.StartsWith("```"))
+                    throw new InvalidOperationException(
+                        "Markdown detected in AI output.");
+
                 if (rawJson.Length > MaxResponseLength)
                     throw new InvalidOperationException(
                         "AI response exceeds expected size.");
 
                 using var doc = JsonDocument.Parse(rawJson);
+
+                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                    throw new InvalidOperationException(
+                        "AI response is not a JSON object.");
+
+                if (!doc.RootElement.TryGetProperty("ExecutiveSummary", out _) ||
+                    !doc.RootElement.TryGetProperty("KeyRisks", out var risksProp) ||
+                    !doc.RootElement.TryGetProperty("Opportunities", out var oppProp) ||
+                    !doc.RootElement.TryGetProperty("Recommendations", out var recProp))
+                {
+                    throw new InvalidOperationException(
+                        "AI JSON missing required properties.");
+                }
+
+                if (risksProp.ValueKind != JsonValueKind.Array ||
+                    oppProp.ValueKind != JsonValueKind.Array ||
+                    recProp.ValueKind != JsonValueKind.Array)
+                {
+                    throw new InvalidOperationException(
+                        "AI JSON properties must be arrays.");
+                }
 
                 var parsed = JsonSerializer.Deserialize<LLMInsightResponse>(
                     rawJson,
@@ -124,13 +162,12 @@ public sealed class InsightReasoningAgent
                         PropertyNameCaseInsensitive = true
                     });
 
-                if (parsed is null)
+                if (parsed is null ||
+                    string.IsNullOrWhiteSpace(parsed.ExecutiveSummary))
+                {
                     throw new InvalidOperationException(
-                        "Failed to parse AI JSON response.");
-
-                if (string.IsNullOrWhiteSpace(parsed.ExecutiveSummary))
-                    throw new InvalidOperationException(
-                        "AI response missing ExecutiveSummary.");
+                        "AI response failed validation.");
+                }
 
                 var structured = new BusinessInsightsV1(
                     ExecutiveSummary: parsed.ExecutiveSummary,
@@ -169,7 +206,12 @@ public sealed class InsightReasoningAgent
                     ex,
                     "Azure OpenAI request failed with Status {StatusCode}",
                     ex.Status);
-
+                throw;
+            }
+            catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+            {
+                _logger.LogWarning(ex,
+                    "AI reasoning cancelled due to timeout.");
                 throw;
             }
             catch (Exception ex)
@@ -182,17 +224,38 @@ public sealed class InsightReasoningAgent
         }
     }
 
-    private void EnforcePromptBudget(string prompt)
+    private int CalculateAdaptiveOutputTokens(string prompt)
     {
-        var approxTokens = prompt.Length / 4;
+        if (!_aiOptions.EnableAdaptiveBudgeting)
+            return _aiOptions.MaxOutputTokens;
 
-        if (approxTokens > MaxSafePromptTokens)
-            throw new InvalidOperationException(
-                $"Prompt too large ({approxTokens} tokens).");
+        var approxPromptTokens = prompt.Length / TokenCharRatio;
 
         _logger.LogInformation(
-            "Prompt size approx {Tokens} tokens",
-            approxTokens);
+            "Prompt approx tokens: {PromptTokens}",
+            approxPromptTokens);
+
+        if (approxPromptTokens > _aiOptions.MaxPromptTokens)
+            throw new InvalidOperationException(
+                $"Prompt exceeds configured MaxPromptTokens ({_aiOptions.MaxPromptTokens}).");
+
+        var availableForOutput =
+            _aiOptions.MaxContextTokens
+            - approxPromptTokens
+            - _aiOptions.SafetyMargin;
+
+        if (availableForOutput <= 0)
+            throw new InvalidOperationException(
+                "Insufficient context window remaining for model output.");
+
+        var finalOutput =
+            Math.Min(availableForOutput, _aiOptions.MaxOutputTokens);
+
+        _logger.LogInformation(
+            "Adaptive output tokens calculated: {OutputTokens}",
+            finalOutput);
+
+        return finalOutput;
     }
 
     private string BuildPrompt(InsightSignalSummaryV1 summary)

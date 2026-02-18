@@ -2,6 +2,7 @@ using Contracts.Insights;
 using Contracts.Invocation;
 using Contracts.Signals;
 using FunctionApp.Agents;
+using FunctionApp.Configurations;
 using FunctionApp.Parsing;
 using FunctionApp.Persistence;
 using Microsoft.Azure.Functions.Worker;
@@ -33,6 +34,12 @@ public class Program
             .ConfigureServices((context, services) =>
             {
                 var configuration = context.Configuration;
+
+                // ------------------------------------------------------------
+                // Configurations
+                // ------------------------------------------------------------
+                services.Configure<AIExecutionOptions>(
+                    configuration.GetSection("AIExecution"));
 
                 // ------------------------------------------------------------
                 // Observability & Logging
