@@ -241,14 +241,17 @@ public sealed class InsightReasoningAgent
 
     private string BuildPrompt(InsightSignalSummaryV1 summary)
     {
+        var categoryJson = JsonSerializer.Serialize(
+            summary.CategoryHighlights,
+            new JsonSerializerOptions { WriteIndented = false });
+
         return _promptTemplate
             .Replace("{{RecordCount}}", summary.RecordCount.ToString())
             .Replace("{{TopNumericTotals}}",
                 JsonSerializer.Serialize(summary.TopNumericTotals))
             .Replace("{{TopNumericAverages}}",
                 JsonSerializer.Serialize(summary.TopNumericAverages))
-            .Replace("{{CategoryHighlights}}",
-                JsonSerializer.Serialize(summary.CategoryHighlights))
+            .Replace("{{CategoryHighlights}}", categoryJson)
             .Replace("{{AnomalyCount}}",
                 summary.AnomalyCount.ToString())
             .Replace("{{SampleAnomalies}}",

@@ -6,6 +6,8 @@ Do NOT invent numbers.
 Do NOT assume trends not supported by the data.
 Do NOT speculate beyond the provided signals.
 If a field is not provided, do not reference it.
+Do not introduce arbitrary threshold values unless mathematically derived from provided signals.
+Every recommendation must reference at least one numeric percentage or count.
 
 Your output MUST be valid JSON and MUST follow this exact schema:
 
@@ -83,6 +85,10 @@ ANALYSIS INSTRUCTIONS
 - Each recommendation must logically follow from the provided summary.
 - Avoid vague or unsupported advice.
 
+5. Concentration Rule
+- Consider a category “highly concentrated” only if its percentage exceeds 30%.
+- Use provided Percentage values for judgment.
+- Do not classify concentration without percentage support.
 ---------------------------------------------------------
 STRICT CONSTRAINTS
 ---------------------------------------------------------

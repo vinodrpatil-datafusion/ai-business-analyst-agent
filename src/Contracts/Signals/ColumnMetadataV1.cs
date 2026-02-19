@@ -7,10 +7,11 @@
 /// </summary>
 public sealed record ColumnMetadataV1(
     string ColumnName,
-    string InferredType,
+    InferredColumnType ColumnType,
     int NullCount,
     int UniqueCount,
     decimal? Min,
     decimal? Max,
     decimal? Average
 );
+

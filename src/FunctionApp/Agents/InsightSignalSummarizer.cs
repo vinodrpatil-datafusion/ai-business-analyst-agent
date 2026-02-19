@@ -7,58 +7,57 @@ namespace FunctionApp.Agents;
 /// </summary>
 public sealed class InsightSignalSummarizer
 {
+    private const int TopCategoryLimit = 10;
+
     public InsightSignalSummaryV1 Summarize(BusinessSignalsV1 signals)
     {
-        var compression = GetCompressionLevel(signals.RecordCount);
-
-        var topTotals = signals.NumericTotals
-            .OrderByDescending(x => x.Value)
-            .Take(compression.NumericLimit)
-            .ToDictionary(x => x.Key, x => x.Value);
-
-        var topAverages = signals.NumericAverages
-            .OrderByDescending(x => x.Value)
-            .Take(compression.NumericLimit)
-            .ToDictionary(x => x.Key, x => x.Value);
+        var totalRecords = signals.RecordCount;
 
         var categoryHighlights = signals.CategoryCounts
-            .OrderByDescending(x => x.Value)
-            .Take(compression.CategoryLimit)
-            .Select(x => $"{x.Key} = {x.Value}")
+            .OrderByDescending(kv => kv.Value)
+            .Take(TopCategoryLimit)
+            .Select(kv =>
+            {
+                var split = kv.Key.Split(':');
+                var column = split[0];
+                var value = split.Length > 1 ? split[1] : "Unknown";
+
+                var percentage = totalRecords == 0
+                    ? 0
+                    : Math.Round((decimal)kv.Value / totalRecords * 100, 2);
+
+                return new CategoryHighlightV1(
+                    Column: column,
+                    Value: value,
+                    Count: kv.Value,
+                    Percentage: percentage
+                );
+            })
             .ToList();
-
-        var anomalies = signals.DetectedAnomalies
-            .Take(compression.AnomalyLimit)
-            .ToList();
-
-        var numericCount = signals.ColumnMetadata
-            .Count(c => c.Value.InferredType == "Numeric");
-
-        var categoricalCount = signals.ColumnMetadata
-            .Count(c => c.Value.InferredType == "Categorical");
 
         return new InsightSignalSummaryV1(
-            RecordCount: signals.RecordCount,
-            TopNumericTotals: topTotals,
-            TopNumericAverages: topAverages,
+            RecordCount: totalRecords,
+            TopNumericTotals: signals.NumericTotals
+                .OrderByDescending(x => x.Value)
+                .Take(5)
+                .ToDictionary(k => k.Key, v => v.Value),
+
+            TopNumericAverages: signals.NumericAverages
+                .OrderByDescending(x => x.Value)
+                .Take(5)
+                .ToDictionary(k => k.Key, v => v.Value),
+
             CategoryHighlights: categoryHighlights,
+
             AnomalyCount: signals.DetectedAnomalies.Count,
-            SampleAnomalies: anomalies,
+            SampleAnomalies: signals.DetectedAnomalies.Take(5).ToList(),
+
             ColumnCount: signals.ColumnMetadata.Count,
-            NumericColumnCount: numericCount,
-            CategoricalColumnCount: categoricalCount
-        );
-    }
+            NumericColumnCount: signals.ColumnMetadata
+                .Count(c => c.Value.ColumnType == InferredColumnType.Numeric),
 
-    private static (int NumericLimit, int CategoryLimit, int AnomalyLimit)
-        GetCompressionLevel(int recordCount)
-    {
-        if (recordCount > 100000)
-            return (3, 5, 3);
-
-        if (recordCount > 10000)
-            return (5, 10, 5);
-
-        return (10, 20, 5);
+            CategoricalColumnCount: signals.ColumnMetadata
+                .Count(c => c.Value.ColumnType == InferredColumnType.Categorical)
+                    );
     }
 }

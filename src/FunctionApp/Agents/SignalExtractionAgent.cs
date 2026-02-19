@@ -118,7 +118,7 @@ public sealed class SignalExtractionAgent
 
                 metadata[column] = new ColumnMetadataV1(
                     ColumnName: column,
-                    InferredType: "Numeric",
+                    ColumnType: InferredColumnType.Numeric,
                     NullCount: nullCount,
                     UniqueCount: uniqueCount,
                     Min: stats.Min,
@@ -137,7 +137,7 @@ public sealed class SignalExtractionAgent
 
                 metadata[column] = new ColumnMetadataV1(
                     ColumnName: column,
-                    InferredType: "Categorical",
+                    ColumnType: InferredColumnType.Categorical,
                     NullCount: nullCount,
                     UniqueCount: uniqueCount,
                     Min: null,
@@ -148,7 +148,7 @@ public sealed class SignalExtractionAgent
             {
                 metadata[column] = new ColumnMetadataV1(
                     ColumnName: column,
-                    InferredType: inferredType.ToString(),
+                    ColumnType: inferredType,
                     NullCount: nullCount,
                     UniqueCount: uniqueCount,
                     Min: null,
