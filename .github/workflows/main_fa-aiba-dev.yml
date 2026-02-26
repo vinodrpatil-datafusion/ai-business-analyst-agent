@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: './src/FunctionApp/FunctionApp.csproj' # or './FunctionApp' - adjust to your actual project path
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: './src/FunctionApp' # or './FunctionApp' - adjust to your actual project path
   DOTNET_VERSION: '8.0.x' # set this to the dotnet version to use
 jobs:
   build-and-deploy:
@@ -51,3 +51,4 @@ jobs:
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
 
           
+
