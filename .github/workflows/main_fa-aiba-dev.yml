@@ -10,9 +10,8 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
+  AZURE_FUNCTIONAPP_PACKAGE_PATH: './src/FunctionApp/FunctionApp.csproj' # or './FunctionApp' - adjust to your actual project path
   DOTNET_VERSION: '8.0.x' # set this to the dotnet version to use
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -50,4 +49,5 @@ jobs:
           app-name: 'fa-aiba-dev'
           slot-name: 'Production'
           package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
+
           
