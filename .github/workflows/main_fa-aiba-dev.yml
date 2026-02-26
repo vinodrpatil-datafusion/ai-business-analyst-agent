@@ -1,7 +1,7 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
-# More GitHub Actions for Azure: https://github.com/Azure/actions
+# Docs:
+# https://github.com/azure/functions-action
 
-name: Build and deploy dotnet core project to Azure Function App - fa-aiba-dev
+name: Build and deploy dotnet project to Azure Function App - fa-aiba-dev
 
 on:
   push:
@@ -10,31 +10,38 @@ on:
   workflow_dispatch:
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: './src/FunctionApp' # or './FunctionApp' - adjust to your actual project path
-  DOTNET_VERSION: '8.0.x' # set this to the dotnet version to use
+  PROJECT_PATH: './src/FunctionApp/FunctionApp.csproj'
+  PUBLISH_PATH: './publish'
+  DOTNET_VERSION: '8.0.x'
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
+      id-token: write
+      contents: read
 
     steps:
-      - name: 'Checkout GitHub Action'
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup DotNet ${{ env.DOTNET_VERSION }} Environment
-        uses: actions/setup-dotnet@v1
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: 'Resolve Project Dependencies Using Dotnet'
-        shell: bash
-        run: |
-          pushd './${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}'
-          dotnet build ./src/FunctionApp/FunctionApp.csproj --configuration Release
-          popd
-      
+      - name: Restore dependencies
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build
+        run: dotnet build ${{ env.PROJECT_PATH }} --configuration Release --no-restore
+
+      - name: Publish
+        run: dotnet publish ${{ env.PROJECT_PATH }} \
+              --configuration Release \
+              --output ${{ env.PUBLISH_PATH }}
+
       - name: Login to Azure
         uses: azure/login@v2
         with:
@@ -42,13 +49,9 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_3B1D098533EA40B0B1C6B3073C5EB33A }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_9A9CA9F206114937BE53398E198A3B0E }}
 
-      - name: 'Run Azure Functions Action'
+      - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
-        id: fa
         with:
           app-name: 'fa-aiba-dev'
           slot-name: 'Production'
-          package: '${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}/output'
-
-          
-
+          package: ${{ env.PUBLISH_PATH }}
