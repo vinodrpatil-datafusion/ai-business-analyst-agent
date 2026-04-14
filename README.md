@@ -65,6 +65,8 @@ responsibility is handled by a focused, autonomous agent.
 
 ## Architecture Overview
 
+  ![Architecture](./docs/ai-business-analyst-agent-architecture.svg)
+  
 ### High-Level Flow
 
 1. User uploads file to **Azure Blob Storage**
