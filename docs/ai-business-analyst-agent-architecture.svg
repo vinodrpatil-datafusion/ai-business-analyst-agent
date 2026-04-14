@@ -1,0 +1,187 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 680" font-family="Segoe UI, Arial, Helvetica, sans-serif">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#7A8599"/>
+    </marker>
+    <marker id="arrow-red" viewBox="0 0 10 7" refX="9" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#D94F3B"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.12"/>
+    </filter>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F0F4F8"/>
+      <stop offset="100%" stop-color="#E2E8F0"/>
+    </linearGradient>
+    <linearGradient id="blobGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0078D4"/>
+      <stop offset="100%" stop-color="#005A9E"/>
+    </linearGradient>
+    <linearGradient id="funcGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0078D4"/>
+      <stop offset="100%" stop-color="#004E8C"/>
+    </linearGradient>
+    <linearGradient id="signalGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1B9AA0"/>
+      <stop offset="100%" stop-color="#147278"/>
+    </linearGradient>
+    <linearGradient id="insightGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7B4FBF"/>
+      <stop offset="100%" stop-color="#5C3A8F"/>
+    </linearGradient>
+    <linearGradient id="openaiGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#6B21A8"/>
+      <stop offset="100%" stop-color="#4C1D80"/>
+    </linearGradient>
+    <linearGradient id="logicGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#CA8A04"/>
+      <stop offset="100%" stop-color="#A16207"/>
+    </linearGradient>
+    <linearGradient id="sqlGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E7A50"/>
+      <stop offset="100%" stop-color="#065F3E"/>
+    </linearGradient>
+    <linearGradient id="obsGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#3B82F6"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1060" height="680" rx="12" fill="url(#bgGrad)" stroke="#CBD5E1" stroke-width="1"/>
+
+  <!-- Title -->
+  <text x="530" y="38" text-anchor="middle" font-size="18" font-weight="700" fill="#1E293B" letter-spacing="0.5">AI Business Analyst Agent — Architecture</text>
+  <text x="530" y="58" text-anchor="middle" font-size="11.5" fill="#64748B" letter-spacing="0.3">Azure-Native · Serverless · Agent-Oriented</text>
+
+  <!-- ==================== ROW 1: User + Blob Storage ==================== -->
+
+  <!-- User / Client -->
+  <rect x="30" y="100" width="140" height="56" rx="8" fill="#334155" filter="url(#shadow)"/>
+  <text x="100" y="125" text-anchor="middle" font-size="10.5" fill="#94A3B8">Upload CSV / Excel</text>
+  <text x="100" y="142" text-anchor="middle" font-size="13" font-weight="600" fill="#FFF">User / Client</text>
+
+  <!-- Arrow: User → Blob -->
+  <line x1="170" y1="128" x2="218" y2="128" stroke="#7A8599" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- Azure Blob Storage -->
+  <rect x="220" y="92" width="175" height="72" rx="8" fill="url(#blobGrad)" filter="url(#shadow)"/>
+  <text x="307" y="118" text-anchor="middle" font-size="10" fill="#B3D4F0" letter-spacing="0.4">AZURE</text>
+  <text x="307" y="136" text-anchor="middle" font-size="14" font-weight="600" fill="#FFF">Blob Storage</text>
+  <text x="307" y="153" text-anchor="middle" font-size="9.5" fill="#A0C4E8">Raw Data Ingestion</text>
+
+  <!-- Arrow: Blob → Signal Extraction -->
+  <line x1="307" y1="164" x2="307" y2="208" stroke="#7A8599" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="315" y="192" font-size="9" fill="#64748B">Job Trigger</text>
+
+  <!-- ==================== AZURE FUNCTIONS CONTAINER ==================== -->
+  <rect x="20" y="210" width="688" height="190" rx="10" fill="none" stroke="#0078D4" stroke-width="1.5" stroke-dasharray="6 3" opacity="0.5"/>
+  <rect x="30" y="203" width="128" height="18" rx="4" fill="#0078D4" opacity="0.85"/>
+  <text x="94" y="216" text-anchor="middle" font-size="10" font-weight="600" fill="#FFF">Azure Functions</text>
+
+  <!-- Agent 1: Signal Extraction -->
+  <rect x="40" y="236" width="260" height="80" rx="8" fill="url(#signalGrad)" filter="url(#shadow)"/>
+  <text x="170" y="258" text-anchor="middle" font-size="10" fill="#A0DFE2" letter-spacing="0.5">AGENT 1</text>
+  <text x="170" y="278" text-anchor="middle" font-size="13.5" font-weight="700" fill="#FFF">Signal Extraction Agent</text>
+  <text x="170" y="296" text-anchor="middle" font-size="10" fill="#C8F0F2">Deterministic · No LLM</text>
+  <text x="170" y="310" text-anchor="middle" font-size="9" fill="#A0DFE2">Analyses raw data → structured signals</text>
+
+  <!-- ===== BOUNDARY LINE ===== -->
+  <line x1="360" y1="222" x2="360" y2="393" stroke="#D94F3B" stroke-width="2.2" stroke-dasharray="7 4"/>
+  <rect x="332" y="225" width="56" height="16" rx="3" fill="#D94F3B"/>
+  <text x="360" y="236" text-anchor="middle" font-size="8" font-weight="700" fill="#FFF">BOUNDARY</text>
+
+  <!-- Boundary label -->
+  <text x="360" y="410" text-anchor="middle" font-size="9.5" font-weight="600" fill="#D94F3B">Signals Only — No Raw Data Crosses This Boundary</text>
+
+  <!-- Arrow: Signal → Insight (across boundary) -->
+  <line x1="300" y1="276" x2="398" y2="276" stroke="#D94F3B" stroke-width="1.8" marker-end="url(#arrow-red)"/>
+  <text x="348" y="268" text-anchor="middle" font-size="8.5" font-weight="600" fill="#D94F3B">Structured</text>
+  <text x="348" y="278" text-anchor="middle" font-size="8.5" font-weight="600" fill="#D94F3B">Signals</text>
+
+  <!-- Agent 2: Insight Reasoning -->
+  <rect x="400" y="236" width="260" height="80" rx="8" fill="url(#insightGrad)" filter="url(#shadow)"/>
+  <text x="530" y="258" text-anchor="middle" font-size="10" fill="#D4B8F0" letter-spacing="0.5">AGENT 2</text>
+  <text x="530" y="278" text-anchor="middle" font-size="13.5" font-weight="700" fill="#FFF">Insight Reasoning Agent</text>
+  <text x="530" y="296" text-anchor="middle" font-size="10" fill="#DCC8F5">AI-Powered Reasoning</text>
+  <text x="530" y="310" text-anchor="middle" font-size="9" fill="#D4B8F0">Insights · Risks · Recommended Actions</text>
+
+  <!-- Arrow: Insight → Azure OpenAI -->
+  <line x1="660" y1="276" x2="728" y2="276" stroke="#7A8599" stroke-width="1.8" marker-end="url(#arrow)"/>
+
+  <!-- ==================== AZURE OPENAI ==================== -->
+  <rect x="730" y="236" width="175" height="80" rx="8" fill="url(#openaiGrad)" filter="url(#shadow)"/>
+  <text x="817" y="258" text-anchor="middle" font-size="10" fill="#D4B8F0" letter-spacing="0.4">AZURE</text>
+  <text x="817" y="278" text-anchor="middle" font-size="14" font-weight="700" fill="#FFF">OpenAI</text>
+  <text x="817" y="296" text-anchor="middle" font-size="9.5" fill="#C8A0F0">GPT-4o · Executive Analysis</text>
+  <text x="817" y="310" text-anchor="middle" font-size="8.5" fill="#B090D8">Receives signals, never raw data</text>
+
+  <!-- ==================== ROW 3: Orchestration + Observation ==================== -->
+
+  <!-- Agent 3: Orchestration (Logic Apps) -->
+  <rect x="40" y="340" width="260" height="52" rx="8" fill="url(#logicGrad)" filter="url(#shadow)"/>
+  <text x="66" y="363" font-size="9" fill="#FDE68A" letter-spacing="0.4">AGENT 3</text>
+  <text x="138" y="363" font-size="12.5" font-weight="600" fill="#FFF">Orchestration Agent</text>
+  <text x="170" y="380" text-anchor="middle" font-size="9.5" fill="#FDE68A">Azure Logic Apps · Coordination · Retries · Job Lifecycle</text>
+
+  <!-- Agent 4: Observation -->
+  <rect x="400" y="340" width="260" height="52" rx="8" fill="url(#obsGrad)" filter="url(#shadow)"/>
+  <text x="426" y="363" font-size="9" fill="#BFDBFE" letter-spacing="0.4">AGENT 4</text>
+  <text x="510" y="363" font-size="12.5" font-weight="600" fill="#FFF">Observation Agent</text>
+  <text x="530" y="380" text-anchor="middle" font-size="9.5" fill="#BFDBFE">Read-Only · Job Status · Insight Availability</text>
+
+  <!-- ==================== ROW 4: Azure SQL Database ==================== -->
+
+  <!-- Arrow: Insight Agent → SQL -->
+  <path d="M 530 316 L 530 330 L 530 440 L 530 458" fill="none" stroke="#7A8599" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="538" y="442" font-size="9" fill="#64748B">Persist Results</text>
+
+  <!-- Arrow: OpenAI → SQL (curved) -->
+  <path d="M 817 316 L 817 440 L 680 440 L 680 458" fill="none" stroke="#7A8599" stroke-width="1.5" stroke-dasharray="4 3"/>
+
+  <!-- Arrow: Observation → SQL -->
+  <path d="M 530 392 L 530 420 L 530 440" fill="none" stroke="#7A8599" stroke-width="1.2" stroke-dasharray="4 3"/>
+  <text x="538" y="430" font-size="8" fill="#94A3B8">Query</text>
+
+  <!-- Azure SQL Database -->
+  <rect x="430" y="460" width="250" height="72" rx="8" fill="url(#sqlGrad)" filter="url(#shadow)"/>
+  <text x="555" y="486" text-anchor="middle" font-size="10" fill="#A7F3D0" letter-spacing="0.4">AZURE</text>
+  <text x="555" y="505" text-anchor="middle" font-size="14" font-weight="700" fill="#FFF">SQL Database</text>
+  <text x="555" y="522" text-anchor="middle" font-size="9.5" fill="#A7F3D0">Append-Only · Auditable · Full Trail</text>
+
+  <!-- Arrow: SQL → User (return path) -->
+  <path d="M 430 496 L 100 496 L 100 156" fill="none" stroke="#7A8599" stroke-width="1.5" stroke-dasharray="5 3" marker-end="url(#arrow)"/>
+  <text x="80" y="440" font-size="9" fill="#64748B" transform="rotate(-90 80 440)">Async Query · Status · Insights</text>
+
+  <!-- ==================== LEGEND ==================== -->
+  <rect x="30" y="558" width="998" height="108" rx="8" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1"/>
+  <text x="50" y="580" font-size="11" font-weight="700" fill="#334155">Design Principles</text>
+
+  <!-- Principle icons -->
+  <circle cx="56" cy="600" r="5" fill="#1B9AA0"/>
+  <text x="68" y="604" font-size="10" fill="#475569">Raw data never reaches the LLM — deterministic preprocessing first</text>
+
+  <circle cx="56" cy="622" r="5" fill="#7B4FBF"/>
+  <text x="68" y="626" font-size="10" fill="#475569">Each agent has a single responsibility — separation of concerns</text>
+
+  <circle cx="56" cy="644" r="5" fill="#0E7A50"/>
+  <text x="68" y="648" font-size="10" fill="#475569">Full audit trail — append-only storage in Azure SQL Database</text>
+
+  <!-- Legend: Line types -->
+  <text x="620" y="580" font-size="11" font-weight="700" fill="#334155">Legend</text>
+
+  <line x1="620" y1="596" x2="660" y2="596" stroke="#7A8599" stroke-width="1.8" marker-end="url(#arrow)"/>
+  <text x="668" y="600" font-size="10" fill="#475569">Data Flow</text>
+
+  <line x1="620" y1="616" x2="660" y2="616" stroke="#D94F3B" stroke-width="2" stroke-dasharray="7 4"/>
+  <text x="668" y="620" font-size="10" fill="#475569">Signal Boundary (no raw data)</text>
+
+  <line x1="620" y1="636" x2="660" y2="636" stroke="#0078D4" stroke-width="1.5" stroke-dasharray="6 3" opacity="0.5"/>
+  <text x="668" y="640" font-size="10" fill="#475569">Azure Functions Runtime</text>
+
+  <line x1="620" y1="656" x2="660" y2="656" stroke="#7A8599" stroke-width="1.5" stroke-dasharray="4 3"/>
+  <text x="668" y="660" font-size="10" fill="#475569">Async / Query Path</text>
+
+  <!-- Footer -->
+  <text x="1040" y="674" text-anchor="end" font-size="8.5" fill="#94A3B8">DataFusion Innovation · github.com/vinodrpatil-datafusion</text>
+</svg>
