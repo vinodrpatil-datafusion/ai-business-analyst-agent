@@ -1,6 +1,4 @@
-# AI Business Analyst Agent for SMEs
-
-🚀 Built for **Microsoft AI Dev Days Global Hackathon 2026**
+# AI Business Analyst Agent
 
 ---
 
@@ -170,7 +168,7 @@ This project aligns strongly with the **Microsoft AI Dev Days Hackathon** by:
 
 ## Status
 
-🛠️ **Active Development**
+🛠️ **Architecture complete — core pipeline operational**
 
 This repository will be incrementally updated during the hackathon with:
 - Code implementations  
