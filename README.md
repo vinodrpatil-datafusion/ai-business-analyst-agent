@@ -1,197 +1,141 @@
 # AI Business Analyst Agent
 
----
+A serverless, Azure-native reference implementation that turns structured
+business data (CSV / Excel) into executive-level insights, risks, and
+recommended actions — built on a **deterministic-before-probabilistic**
+design so the language model narrates pre-computed facts rather than
+calculating them.
 
-## Overview
-
-Enterprises generate large volumes of structured data across Excel, CSV, 
-and operational systems — but converting that data into clear, 
-actionable decisions remains a manual, time-intensive process.
-
-Traditional dashboards show metrics — but they rarely answer the most 
-important question:
-
-> **"What should I do next?"**
-
-**AI Business Analyst Agent** is a **serverless, Azure-native system** 
-that transforms structured business data into **executive-level 
-insights**, risks, opportunities, and recommended actions using 
-**agent-oriented AI design**.
-
-The system behaves like a **virtual business analyst** — reliable, 
-explainable, and production-ready.
+> **Status:** Working reference implementation and portfolio build.
+> The core pipeline runs end-to-end. It is **not** production-deployed,
+> and parts of the design described under *Roadmap* are not yet built.
 
 ---
 
-## Core Idea
+## The core idea
 
-The solution uses an **agent-oriented architecture**, where each 
-responsibility is handled by a focused, autonomous agent.
+Dashboards show metrics; they rarely answer *"what should I do next?"*
+This project does — but with a deliberate guardrail for regulated and
+data-sensitive contexts:
 
-### Agent Roles
+> **Raw data is never sent to the LLM.** Statistics and anomalies are
+> computed deterministically first; the model receives a bounded,
+> pre-computed summary and narrates insight from it. It does not see the
+> dataset and does not do the arithmetic.
 
-- **Signal Extraction Agent**
-  Deterministically analyzes raw CSV / Excel data and extracts 
-  structured business signals.
-
-- **Insight Reasoning Agent**
-  Uses **Azure OpenAI** to convert signals into executive insights, 
-  risks, and recommendations.
-
-- **Orchestration Agent**
-  Implemented using **Azure Logic Apps**, coordinating execution, 
-  retries, and job lifecycle.
-
-- **Observation Agent**
-  Provides read-only job status and insight availability for UI, 
-  orchestration, and monitoring.
-
-> **Key principle:**
-> Raw data is never sent directly to the LLM. Deterministic 
-> preprocessing always happens first.
+This is the design's main point of differentiation: the numbers are
+trustworthy because they are computed in code, and the LLM is constrained
+to interpretation only.
 
 ---
 
-## Key Features
+## What actually runs today
 
-- Blob-first ingestion for scalable file uploads
-- Deterministic signal extraction
-- AI-powered business insights using Azure OpenAI
-- Explicit job lifecycle management
-- Auditable, reproducible outputs
-- Serverless execution with linear cost scaling
+The pipeline is a two-step HTTP flow over Azure Functions (.NET 8,
+isolated worker):
 
----
+1. **`POST /api/jobs`** — registers a job for a previously uploaded blob
+   and returns a `JobId`. The caller sends a blob reference, not raw data.
+2. **`POST /api/jobs/{jobId}/process`** — runs the pipeline for that job.
+3. **`GET /api/jobs/{jobId}`** — returns job status and insight
+   availability (read-only).
 
-## Architecture Overview
+Processing (step 2) executes three stages:
 
-  ![Architecture](./docs/ai-business-analyst-agent-architecture.svg)
-  
-### High-Level Flow
+- **Signal Extraction (deterministic)** — reads the blob, parses CSV/Excel,
+  infers column types, computes per-column statistics, and detects
+  anomalies. Output is a structured `BusinessSignalsV1` contract. No raw
+  rows leave this stage.
+- **Signal Summarization (deterministic)** — reduces the full signal set to
+  a bounded summary sized for the model, so prompt size stays controlled.
+- **Insight Reasoning (Azure OpenAI)** — sends the bounded summary to the
+  model and parses a structured JSON response into `BusinessInsightsV1`.
+  Includes adaptive output-token sizing, token-usage capture
+  (input / output / total), and typed error handling.
 
-1. User uploads file to **Azure Blob Storage**
-2. Job is submitted with Blob reference
-3. **Azure Functions** execute agents
-4. Signals are extracted deterministically
-5. Insights are generated via Azure OpenAI
-6. Results are stored in **Azure SQL**
-7. Status and insights are queried asynchronously
+### Reliability characteristics (implemented)
 
----
+The processing function is built to be safe to call repeatedly:
 
-## Repository Structure
-
-The repository enforces clear separation of concerns and long-term 
-maintainability:
-
-- **src/Contracts** — Versioned, immutable contracts (never break)
-- **src/FunctionApp** — Azure Functions with agent-oriented business 
-  logic
-- **logicapp/** — Workflow orchestration (Azure Logic Apps)
-- **database/** — SQL schema (append-only, auditable)
-- **docs/** — Architecture, design decisions, and documentation
-- **samples/** — Sample input data for testing
-
-Each layer has a single responsibility, making the system easier to 
-evolve without architectural rewrites.
+- **Idempotency** — a completed job returns `409 Conflict` rather than
+  re-running.
+- **Concurrency-safe state transition** — `Pending → Processing` is guarded
+  so two callers cannot process the same job at once.
+- **Timeout safeguard** — processing is bounded by a 90-second linked
+  cancellation token.
+- **Explicit failure state** — failures transition the job to `Failed`.
 
 ---
 
-## Technology Stack
+## Architecture
 
-### Microsoft & Azure Services
+![Architecture](./docs/ai-business-analyst-agent-architecture.svg)
 
-- **Azure Functions (Consumption)** — serverless compute for agents
-- **Azure Logic Apps (Consumption)** — orchestration and workflow 
-  control
-- **Azure OpenAI** — AI reasoning and insight generation
-- **Azure SQL Database** — system of record and audit trail
-- **Azure Blob Storage** — raw file storage
+| Layer | Responsibility |
+|-------|----------------|
+| `src/Contracts` | Versioned (`*V1`) contracts shared across stages |
+| `src/FunctionApp` | Azure Functions: parsing, deterministic analysis, agents, persistence |
+| `database/` | SQL schema for jobs, signals, and insights |
+| `docs/` | Architecture, design decisions, responsible-AI notes |
+| `samples/` | Sample input datasets |
 
-### Developer Tooling
-
-- **GitHub** — source control and collaboration
-- **GitHub Actions** — CI/CD automation
-- **Visual Studio** — development environment
-- **GitHub Copilot** — AI-assisted development
+**Stack:** Azure Functions (Consumption) · Azure OpenAI · Azure Blob
+Storage · SQL database · GitHub Actions (CI/CD).
 
 ---
 
-## Cost Architecture
+## Scope and current limitations
 
-The system is designed for cost efficiency at any scale:
+This is a focused reference build, scoped deliberately to the
+deterministic-to-probabilistic handoff. Known boundaries:
 
-- Azure Functions & Logic Apps — zero idle cost
-- Azure SQL Database as the system of record
-- Azure OpenAI usage minimised through deterministic preprocessing
+- **Orchestration is manual.** The submit → process flow is triggered by
+  explicit HTTP calls. There is no automated orchestrator or retry policy
+  yet (see *Roadmap*).
+- **CSV parsing handles simple delimited files.** Fields containing the
+  delimiter inside quotes are not yet parsed correctly.
+- **Numeric parsing is not yet locale-aware.** Type inference and statistics
+  should share a single, explicit culture; aligning them is a known fix.
+- **No automated test suite yet.** See *Roadmap*.
 
-Costs scale **linearly with usage**, not with infrastructure size — 
-making the architecture suitable for both early-stage deployment and 
-enterprise scale.
-
----
-
-## Documentation
-
-The following documents explain the system design progressively:
-
-1. `docs/architecture.md` — Overall system design and execution flow
-2. `docs/contracts.md` — Contract versioning and backward 
-   compatibility strategy
-3. `docs/decisions.md` — Key architectural trade-offs and rationale
-4. `docs/responsible-ai.md` — Responsible AI principles, trust, 
-   and governance
+These are tracked, not hidden — the design is honest about what it does and
+does not yet guarantee.
 
 ---
 
-## Testing Strategy
+## Roadmap
 
-The project focuses on **confidence over complexity**:
+Planned, not yet implemented:
 
-- Contract safety tests to prevent breaking changes
-- Deterministic behaviour tests for signal extraction
-- Read-only validation for job status queries
-
-This ensures reliability without unnecessary test infrastructure.
-
----
-
-## Responsible AI & Enterprise Readiness
-
-- Deterministic preprocessing before AI reasoning
-- Structured prompts to reduce hallucinations
-- No raw data sent to the LLM
-- Immutable storage of signals and insights
-- Versioned contracts for backward compatibility
-
-This design supports **enterprise adoption**, governance, and 
-future platform scaling.
+- **Automated orchestration** (e.g. Logic Apps or a durable orchestrator)
+  to replace the manual process trigger, with retry and lifecycle handling.
+- **Test suite** — deterministic unit tests for parsing, type inference,
+  statistics, and anomaly detection (including the quoted-field and
+  locale-aware-numeric edge cases above), plus contract-compatibility tests.
+- **Robust CSV parsing** via a dedicated parser (quoted fields, embedded
+  delimiters, embedded newlines).
+- **Explicit culture handling** unified across inference and statistics.
+- **Expanded sample datasets and deployment instructions.**
 
 ---
 
-## Status
+## Responsible-AI posture
 
-**Architecture complete — core pipeline operational.**
+- Deterministic preprocessing precedes all AI reasoning.
+- No raw data is sent to the model — only a bounded, pre-computed summary.
+- Structured prompts and structured-JSON parsing constrain model output.
+- Signals and insights are persisted for auditability.
+- Contracts are versioned for backward compatibility.
 
-Active development continues with additional documentation, 
-deployment instructions, and extended sample datasets.
+See `docs/responsible-ai.md` for detail.
 
 ---
 
 ## Author
 
-**Vinod Patil**
-Enterprise AI & Data Architect
+**Vinod Patil** — Lead Data & AI Engineer
 
-Building practical, production-ready AI systems that balance 
-intelligence, reliability, and cost efficiency.
+[LinkedIn](https://www.linkedin.com/in/vinodrpatil/) ·
+[GitHub](https://github.com/vinodrpatil-datafusion)
 
-[LinkedIn](https://www.linkedin.com/in/vinodrpatil/) | 
-[DataFusion Innovation](https://github.com/vinodrpatil-datafusion)
-
----
-
-## Hackathon
-
-This project was submitted to the **Microsoft AI Dev Days Global 
-Hackathon 2026**.
+Originally built for the Microsoft AI Dev Days Global Hackathon 2026.
