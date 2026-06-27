@@ -42,10 +42,12 @@ isolated worker):
 
 Processing (step 2) executes three stages:
 
-- **Signal Extraction (deterministic)** — reads the blob, parses CSV/Excel,
-  infers column types, computes per-column statistics, and detects
-  anomalies. Output is a structured `BusinessSignalsV1` contract. No raw
-  rows leave this stage.
+- **Signal Extraction (deterministic)** — reads the blob and parses CSV
+  (RFC 4180-style: quoted fields, embedded delimiters and newlines) or
+  Excel, infers column types, computes per-column statistics, and detects
+  anomalies. Numeric parsing routes through a single shared parser, so type
+  inference and statistics apply identical, explicit culture rules. Output
+  is a structured `BusinessSignalsV1` contract; no raw rows leave this stage.
 - **Signal Summarization (deterministic)** — reduces the full signal set to
   a bounded summary sized for the model, so prompt size stays controlled.
 - **Insight Reasoning (Azure OpenAI)** — sends the bounded summary to the
@@ -92,10 +94,10 @@ deterministic-to-probabilistic handoff. Known boundaries:
 - **Orchestration is manual.** The submit → process flow is triggered by
   explicit HTTP calls. There is no automated orchestrator or retry policy
   yet (see *Roadmap*).
-- **CSV parsing handles simple delimited files.** Fields containing the
-  delimiter inside quotes are not yet parsed correctly.
-- **Numeric parsing is not yet locale-aware.** Type inference and statistics
-  should share a single, explicit culture; aligning them is a known fix.
+- **Numeric parsing assumes invariant format.** Type inference and
+  statistics share a single explicit culture (InvariantCulture); values in
+  other locale formats (e.g. comma decimals) are rejected rather than
+  silently misinterpreted. Locale-configurable parsing is on the roadmap.
 - **No automated test suite yet.** See *Roadmap*.
 
 These are tracked, not hidden — the design is honest about what it does and
@@ -108,13 +110,16 @@ does not yet guarantee.
 Planned, not yet implemented:
 
 - **Automated orchestration** (e.g. Logic Apps or a durable orchestrator)
-  to replace the manual process trigger, with retry and lifecycle handling.
+  to replace the manual process trigger, with lifecycle handling.
+- **Resilience on model calls** — retry with exponential backoff for
+  transient Azure OpenAI failures (e.g. rate limiting).
+- **Managed Identity for resource access** — Entra-based authentication to
+  Azure OpenAI, Blob, and SQL, replacing key/connection-string config.
 - **Test suite** — deterministic unit tests for parsing, type inference,
-  statistics, and anomaly detection (including the quoted-field and
-  locale-aware-numeric edge cases above), plus contract-compatibility tests.
-- **Robust CSV parsing** via a dedicated parser (quoted fields, embedded
-  delimiters, embedded newlines).
-- **Explicit culture handling** unified across inference and statistics.
+  statistics, and anomaly detection (locking in the CSV quoted-field and
+  numeric-culture handling), plus contract-compatibility tests.
+- **Locale-configurable numeric parsing** — optional culture selection
+  beyond the invariant default.
 - **Expanded sample datasets and deployment instructions.**
 
 ---
