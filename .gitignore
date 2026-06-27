@@ -68,3 +68,6 @@ serviceDependencies.local.json
 *.user
 launchSettings.json
 
+# macOS
+.DS_Store
+
