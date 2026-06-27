@@ -10,10 +10,10 @@ namespace FunctionApp.Functions;
 
 public sealed class GetJobStatusFunction
 {
-    private readonly IAgent<Guid, JobStatusResponseV1> _statusAgent;
+    private readonly IAgent<Guid, JobStatusResponseV1?> _statusAgent;
 
     public GetJobStatusFunction(
-        IAgent<Guid, JobStatusResponseV1> statusAgent)
+        IAgent<Guid, JobStatusResponseV1?> statusAgent)
     {
         _statusAgent = statusAgent;
     }
@@ -52,6 +52,13 @@ public sealed class GetJobStatusFunction
             jobId,
             context.CancellationToken
         );
+
+        if (status is null)
+        {
+            var notFound = request.CreateResponse(HttpStatusCode.NotFound);
+            await notFound.WriteStringAsync("Job not found.");
+            return notFound;
+        }
 
         var response = request.CreateResponse(HttpStatusCode.OK);
         await response.WriteAsJsonAsync(status);

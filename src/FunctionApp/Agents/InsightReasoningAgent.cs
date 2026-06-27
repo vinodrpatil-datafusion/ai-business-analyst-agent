@@ -25,6 +25,11 @@ public sealed class InsightReasoningAgent
     private const string PromptVersion = "v1.1";
     private const int MaxResponseLength = 100_000;
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
+
     public InsightReasoningAgent(
         ChatClient chatClient,
         string promptTemplate,
@@ -93,16 +98,23 @@ public sealed class InsightReasoningAgent
                     "AI reasoning completed in {ElapsedMs} ms",
                     stopwatch.ElapsedMilliseconds);
 
-                var textPart = response.Value.Content
-                    .FirstOrDefault(p => p.Kind == ChatMessageContentPartKind.Text);
+                var textParts = response.Value.Content
+                    .Where(p => p.Kind == ChatMessageContentPartKind.Text)
+                    .Select(p => p.Text)
+                    .Where(text => !string.IsNullOrWhiteSpace(text))
+                    .ToArray();
 
-                if (textPart == null || string.IsNullOrWhiteSpace(textPart.Text))
+                if (textParts.Length == 0)
                     throw new InvalidOperationException(
                         "AI response did not contain valid text content.");
 
-                var rawJson = textPart.Text.Trim();
+                if (textParts.Length > 1)
+                    throw new InvalidOperationException(
+                        "AI response contained unexpected multiple text parts.");
 
-                if (rawJson.StartsWith("```"))
+                var rawJson = textParts[0].Trim();
+
+                if (rawJson.StartsWith("```", StringComparison.Ordinal))
                     throw new InvalidOperationException(
                         "Markdown detected in AI output.");
 
@@ -110,42 +122,18 @@ public sealed class InsightReasoningAgent
                     throw new InvalidOperationException(
                         "AI response exceeds expected size.");
 
-                using var doc = JsonDocument.Parse(rawJson);
+                var parsed = JsonSerializer.Deserialize<LLMInsightResponse>(rawJson, JsonOptions);
 
-                if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                if (parsed is null)
                     throw new InvalidOperationException(
                         "AI response is not a JSON object.");
 
-                if (!doc.RootElement.TryGetProperty("ExecutiveSummary", out _) ||
-                    !doc.RootElement.TryGetProperty("KeyRisks", out var risksProp) ||
-                    !doc.RootElement.TryGetProperty("Opportunities", out var oppProp) ||
-                    !doc.RootElement.TryGetProperty("Recommendations", out var recProp))
-                {
+                if (string.IsNullOrWhiteSpace(parsed.ExecutiveSummary) ||
+                    parsed.KeyRisks is null ||
+                    parsed.Opportunities is null ||
+                    parsed.Recommendations is null)
                     throw new InvalidOperationException(
                         "AI JSON missing required properties.");
-                }
-
-                if (risksProp.ValueKind != JsonValueKind.Array ||
-                    oppProp.ValueKind != JsonValueKind.Array ||
-                    recProp.ValueKind != JsonValueKind.Array)
-                {
-                    throw new InvalidOperationException(
-                        "AI JSON properties must be arrays.");
-                }
-
-                var parsed = JsonSerializer.Deserialize<LLMInsightResponse>(
-                    rawJson,
-                    new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                if (parsed is null ||
-                    string.IsNullOrWhiteSpace(parsed.ExecutiveSummary))
-                {
-                    throw new InvalidOperationException(
-                        "AI response failed validation.");
-                }
 
                 var structured = new BusinessInsightsV1(
                     ExecutiveSummary: parsed.ExecutiveSummary,

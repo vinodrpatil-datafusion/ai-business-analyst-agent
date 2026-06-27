@@ -15,7 +15,7 @@ public sealed class InsightStore
 
     public async Task SaveAsync(
     Guid jobId,
-    object structuredInsights,
+    BusinessInsightsV1 structuredInsights,
     string? summaryJson,
     string rawResponse,
     DateTimeOffset generatedAt,

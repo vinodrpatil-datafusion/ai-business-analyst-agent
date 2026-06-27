@@ -53,10 +53,21 @@ public sealed class SubmitJobFunction
         FunctionContext context)
     {
         // The UI sends intent + blob reference, not raw data
-        var submitRequest = await JsonSerializer.DeserializeAsync<SubmitJobRequestV1>(
-            request.Body,
-            JsonOptions,
-            context.CancellationToken);
+        SubmitJobRequestV1? submitRequest;
+
+        try
+        {
+            submitRequest = await JsonSerializer.DeserializeAsync<SubmitJobRequestV1>(
+                request.Body,
+                JsonOptions,
+                context.CancellationToken);
+        }
+        catch (JsonException)
+        {
+            var bad = request.CreateResponse(HttpStatusCode.BadRequest);
+            await bad.WriteStringAsync("Invalid JSON payload.");
+            return bad;
+        }
 
         if (submitRequest is null ||
             string.IsNullOrWhiteSpace(submitRequest.BlobPath))
