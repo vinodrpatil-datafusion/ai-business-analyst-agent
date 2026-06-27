@@ -39,13 +39,10 @@ public static class ColumnTypeInference
             return InferredColumnType.DateTime;
         }
 
-        // Numeric
-        if (sample.All(v =>
-            decimal.TryParse(
-                v,
-                NumberStyles.Any,
-                CultureInfo.InvariantCulture,
-                out _)))
+        // Numeric — parse via the shared NumericParser so that "is this
+        // numeric?" here and the value computed in ColumnStatisticsCalculator
+        // can never disagree (same culture, same number styles).
+        if (sample.All(v => NumericParser.TryParse(v, out _)))
         {
             return InferredColumnType.Numeric;
         }
