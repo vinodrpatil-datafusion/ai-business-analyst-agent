@@ -67,6 +67,25 @@ The processing function is built to be safe to call repeatedly:
   cancellation token.
 - **Explicit failure state** — failures transition the job to `Failed`.
 
+### Security and authentication (implemented)
+
+The application holds no secrets in configuration. It authenticates to all
+of its resources through a **user-assigned managed identity** using Entra
+(Azure AD) tokens:
+
+- **Azure OpenAI**, **Blob Storage**, and **SQL** are all accessed via the
+  managed identity — no API keys or connection-string credentials in app
+  settings.
+- **Least-privilege RBAC**: *Cognitive Services OpenAI User* on the model
+  resource, *Storage Blob Data Reader* (read-only — the app only reads
+  uploads) on storage, and scoped `db_datareader` / `db_datawriter` on SQL.
+- Locally, the same code falls back to developer sign-in (`az login` /
+  Visual Studio), so no secrets are needed for development either.
+
+> The only remaining connection string is the Azure Functions host's own
+> platform storage (`AzureWebJobsStorage`), which is required by the runtime
+> and is separate from the application's data-plane access.
+
 ---
 
 ## Architecture
@@ -82,7 +101,8 @@ The processing function is built to be safe to call repeatedly:
 | `samples/` | Sample input datasets |
 
 **Stack:** Azure Functions (Consumption) · Azure OpenAI · Azure Blob
-Storage · SQL database · GitHub Actions (CI/CD).
+Storage · SQL database · Entra / Managed Identity auth · GitHub Actions
+(CI/CD with OIDC federated identity).
 
 ---
 
@@ -109,12 +129,10 @@ does not yet guarantee.
 
 Planned, not yet implemented:
 
-- **Automated orchestration** (e.g. Logic Apps or a durable orchestrator)
+- **Automated orchestration** (e.g. a queue trigger or durable orchestrator)
   to replace the manual process trigger, with lifecycle handling.
 - **Resilience on model calls** — retry with exponential backoff for
   transient Azure OpenAI failures (e.g. rate limiting).
-- **Managed Identity for resource access** — Entra-based authentication to
-  Azure OpenAI, Blob, and SQL, replacing key/connection-string config.
 - **Test suite** — deterministic unit tests for parsing, type inference,
   statistics, and anomaly detection (locking in the CSV quoted-field and
   numeric-culture handling), plus contract-compatibility tests.
@@ -131,6 +149,7 @@ Planned, not yet implemented:
 - Structured prompts and structured-JSON parsing constrain model output.
 - Signals and insights are persisted for auditability.
 - Contracts are versioned for backward compatibility.
+- Resource access is secretless — managed identity with least-privilege RBAC.
 
 See `docs/responsible-ai.md` for detail.
 
