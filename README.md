@@ -31,14 +31,15 @@ to interpretation only.
 
 ## What actually runs today
 
-The pipeline is a two-step HTTP flow over Azure Functions (.NET 8,
-isolated worker):
+The pipeline is an HTTP flow over Azure Functions (.NET 8, isolated worker):
 
 1. **`POST /api/jobs`** — registers a job for a previously uploaded blob
    and returns a `JobId`. The caller sends a blob reference, not raw data.
 2. **`POST /api/jobs/{jobId}/process`** — runs the pipeline for that job.
 3. **`GET /api/jobs/{jobId}`** — returns job status and insight
    availability (read-only).
+4. **`GET /api/jobs/{jobId}/insights`** — returns the generated
+   `BusinessInsightsV1` for the job (read-only); `404` until insights exist.
 
 Processing (step 2) executes three stages:
 
@@ -65,7 +66,10 @@ The processing function is built to be safe to call repeatedly:
   so two callers cannot process the same job at once.
 - **Timeout safeguard** — processing is bounded by a 90-second linked
   cancellation token.
-- **Explicit failure state** — failures transition the job to `Failed`.
+- **Explicit, retryable failure state** — any exception transitions the job
+  to `Failed`. A `Failed` job can be reprocessed (bounded by a retry cap), and
+  signals and insights are persisted append-only as one row per attempt, so a
+  retry never collides with a prior attempt and every attempt is preserved.
 
 ### Security and authentication (implemented)
 
@@ -112,8 +116,9 @@ This is a focused reference build, scoped deliberately to the
 deterministic-to-probabilistic handoff. Known boundaries:
 
 - **Orchestration is manual.** The submit → process flow is triggered by
-  explicit HTTP calls. There is no automated orchestrator or retry policy
-  yet (see *Roadmap*).
+  explicit HTTP calls; there is no automated orchestrator yet (see *Roadmap*).
+  Failed jobs are reprocessable, but reprocessing is a manual re-call, and
+  there is no automatic retry/backoff on transient model-call failures.
 - **Numeric parsing assumes invariant format.** Type inference and
   statistics share a single explicit culture (InvariantCulture); values in
   other locale formats (e.g. comma decimals) are rejected rather than
