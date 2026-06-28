@@ -1,4 +1,4 @@
-﻿using Contracts.Signals;
+using Contracts.Signals;
 using Microsoft.Data.SqlClient;
 using System.Text.Json;
 
@@ -18,11 +18,17 @@ public sealed class SignalStore
         BusinessSignalsV1 signals,
         CancellationToken cancellationToken)
     {
+        // Append-only: one row per processing attempt. Attempt derives from the
+        // existing row count; safe because the per-job processing lock
+        // serializes writers for a given JobId (see InsightStore for rationale).
         const string sql = @"
+            DECLARE @Attempt INT =
+                (SELECT COUNT(*) + 1 FROM BusinessSignals WHERE JobId = @JobId);
+
             INSERT INTO BusinessSignals
-            (JobId, SignalsJson, GeneratedAt)
+            (JobId, Attempt, SignalsJson, GeneratedAt)
             VALUES
-            (@JobId, @SignalsJson, @GeneratedAt)";
+            (@JobId, @Attempt, @SignalsJson, @GeneratedAt)";
 
         using var conn = new SqlConnection(_connectionString);
         using var cmd = new SqlCommand(sql, conn);

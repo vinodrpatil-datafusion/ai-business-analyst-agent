@@ -12,6 +12,15 @@ namespace FunctionApp.Persistence;
 /// </summary>
 public sealed class JobStore
 {
+    /// <summary>
+    /// Maximum number of processing attempts before a Failed job stops being
+    /// retryable. A job may be re-locked from Failed while RetryCount is below
+    /// this cap; each failure increments RetryCount. With the default of 3,
+    /// a job gets an initial attempt plus up to two retries before further
+    /// reprocessing is refused (returns 409). Caps queue-trigger retry loops.
+    /// </summary>
+    public const int MaxProcessingAttempts = 3;
+
     private readonly string _connectionString;
 
     /// <summary>
@@ -95,12 +104,13 @@ public sealed class JobStore
             j.SubmittedAt,
             j.LastUpdatedAt,
             CASE
-                WHEN bi.JobId IS NOT NULL THEN CAST(1 AS BIT)
+                WHEN EXISTS (
+                    SELECT 1 FROM BusinessInsights bi
+                    WHERE bi.JobId = j.JobId
+                ) THEN CAST(1 AS BIT)
                 ELSE CAST(0 AS BIT)
             END AS InsightsAvailable
         FROM Jobs j
-        LEFT JOIN BusinessInsights bi
-            ON j.JobId = bi.JobId
         WHERE j.JobId = @JobId";
 
         await using var conn = new SqlConnection(_connectionString);
@@ -124,8 +134,12 @@ public sealed class JobStore
     }
 
     /// <summary>
-    /// Atomically transitions job from Pending → Processing.
-    /// Only one caller may succeed (concurrency protection).
+    /// Atomically transitions a job into Processing. Succeeds from either
+    /// Pending (first attempt) or Failed (retry) — the latter only while
+    /// RetryCount is below <see cref="MaxProcessingAttempts"/>. The atomic,
+    /// guarded UPDATE means only one caller can win the lock (concurrency
+    /// protection), and a permanently-failing job stops being retryable once
+    /// the cap is reached.
     /// </summary>
     public async Task<bool> TryMarkProcessingAsync(
         Guid jobId,
@@ -137,7 +151,10 @@ public sealed class JobStore
             ProcessingStartedAt = SYSDATETIMEOFFSET(),
             LastUpdatedAt = SYSDATETIMEOFFSET()
         WHERE JobId = @JobId
-          AND Status = @PendingStatus;";
+          AND (
+                Status = @PendingStatus
+             OR (Status = @FailedStatus AND RetryCount < @MaxAttempts)
+          );";
 
         await using var conn = new SqlConnection(_connectionString);
         await using var cmd = new SqlCommand(sql, conn);
@@ -145,6 +162,8 @@ public sealed class JobStore
         cmd.Parameters.Add("@JobId", SqlDbType.UniqueIdentifier).Value = jobId;
         cmd.Parameters.Add("@ProcessingStatus", SqlDbType.NVarChar, 50).Value = JobStatuses.Processing;
         cmd.Parameters.Add("@PendingStatus", SqlDbType.NVarChar, 50).Value = JobStatuses.Pending;
+        cmd.Parameters.Add("@FailedStatus", SqlDbType.NVarChar, 50).Value = JobStatuses.Failed;
+        cmd.Parameters.Add("@MaxAttempts", SqlDbType.Int).Value = MaxProcessingAttempts;
 
         await conn.OpenAsync(cancellationToken);
 
@@ -192,6 +211,7 @@ public sealed class JobStore
         const string sql = @"
         UPDATE Jobs
         SET Status = @FailedStatus,
+            RetryCount = RetryCount + 1,
             ProcessingCompletedAt = SYSDATETIMEOFFSET(),
             ProcessingDurationMs = CASE
                 WHEN ProcessingStartedAt IS NOT NULL

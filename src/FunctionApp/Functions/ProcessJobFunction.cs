@@ -87,8 +87,11 @@ public sealed class ProcessJobFunction
 
         if (!locked)
         {
+            // Lock not acquired: the job is already Processing, already
+            // Completed, or Failed and past the retry cap.
             var conflict = request.CreateResponse(HttpStatusCode.Conflict);
-            await conflict.WriteStringAsync("Job already being processed.");
+            await conflict.WriteStringAsync(
+                "Job cannot be processed: it is already running, already completed, or has reached its retry limit.");
             return conflict;
         }
 

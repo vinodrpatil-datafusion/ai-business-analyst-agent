@@ -126,6 +126,12 @@ public class Program
                     IAgent<Guid, JobStatusResponseV1?>,
                     JobStatusQueryAgent>();
 
+                // Read path for generated insights (GET /jobs/{id}/insights).
+                // Nullable: returns null when no insights exist yet (404 case).
+                services.AddSingleton<
+                    IAgent<Guid, BusinessInsightsV1?>,
+                    InsightQueryAgent>();
+
                 // ------------------------------------------------------------
                 // File Parsing Infrastructure
                 // ------------------------------------------------------------

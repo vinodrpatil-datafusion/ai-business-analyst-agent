@@ -1,6 +1,6 @@
-﻿/*==============================================================
+/*==============================================================
   AI Business Analyst Agent
-  Database Schema (V1.1 – Blob-first ingestion model)
+  Database Schema (V1.2 – retryable, append-with-attempt model)
 
   Architecture Overview:
   ----------------------
@@ -15,10 +15,28 @@
   Design Principles:
   ------------------
   • Single responsibility per table
-  • Append-only reasoning artifacts
+  • Append-only reasoning artifacts (one row PER ATTEMPT, never updated)
   • No redundant status flags
   • Auditability without over-normalization
+
+  V1.2 change (retry support):
+  ----------------------------
+  • Jobs gains RetryCount; a Failed job may be re-locked for reprocessing
+    until RetryCount reaches the application-configured cap.
+  • BusinessSignals / BusinessInsights move from a 1:1 (JobId PRIMARY KEY)
+    model to 1:N append-per-attempt. A surrogate IDENTITY key replaces the
+    JobId primary key so a reprocess cannot collide; JobId becomes a
+    non-unique foreign key. The "current" row for a job is the latest by
+    GeneratedAt. This keeps persistence append-only (INSERT only) while
+    making retries safe — every attempt is preserved for audit.
+
+  NOTE (dev): this script DROP/CREATEs. There is no production data to
+  migrate. If that changes, replace this with an ALTER migration.
 ==============================================================*/
+
+IF OBJECT_ID('BusinessInsights', 'U') IS NOT NULL DROP TABLE BusinessInsights;
+IF OBJECT_ID('BusinessSignals', 'U')  IS NOT NULL DROP TABLE BusinessSignals;
+IF OBJECT_ID('Jobs', 'U')             IS NOT NULL DROP TABLE Jobs;
 
 
 /*==============================================================
@@ -38,12 +56,17 @@ CREATE TABLE Jobs (
 
     -- Job lifecycle state
     -- Allowed values:
-    --   Pending     → Created but not yet processing
-    --   Processing  → Concurrency lock acquired
-    --   Completed   → Signals + Insights persisted
-    --   Failed      → Processing attempted but failed
+    --   Pending     -> Created but not yet processing
+    --   Processing  -> Concurrency lock acquired
+    --   Completed   -> Signals + Insights persisted
+    --   Failed      -> Processing attempted but failed (may be retried)
     Status NVARCHAR(50) NOT NULL
         CHECK (Status IN ('Pending', 'Processing', 'Completed', 'Failed')),
+
+    -- Number of times processing has FAILED for this job.
+    -- Incremented on every Failed transition; used to cap retries so a
+    -- permanently-failing job cannot loop forever (esp. under a queue trigger).
+    RetryCount INT NOT NULL CONSTRAINT DF_Jobs_RetryCount DEFAULT (0),
 
     -- Creation audit timestamp
     SubmittedAt DATETIMEOFFSET NOT NULL,
@@ -51,41 +74,37 @@ CREATE TABLE Jobs (
     -- Updated on every state transition
     LastUpdatedAt DATETIMEOFFSET NOT NULL,
 
-    -- Execution lifecycle tracking
+    -- Execution lifecycle tracking (reset at the start of each attempt)
     ProcessingStartedAt DATETIMEOFFSET NULL,
     ProcessingCompletedAt DATETIMEOFFSET NULL,
 
-    -- Computed duration (ms) between start and completion
+    -- Computed duration (ms) between start and completion of the last attempt
     ProcessingDurationMs INT NULL
 );
 
-
----------------------------------------------------------------
--- Index Strategy for Jobs
----------------------------------------------------------------
-
--- Enables fast filtering by lifecycle state
--- Useful for future background polling or dashboards
 CREATE INDEX IX_Jobs_Status ON Jobs(Status);
-
--- Enables time-based reporting and analytics
 CREATE INDEX IX_Jobs_SubmittedAt ON Jobs(SubmittedAt);
-
 
 
 /*==============================================================
   TABLE: BusinessSignals
   -------------------------------------------------------------
   Purpose:
-    Stores deterministic extraction results.
-    Raw business data is never sent directly to the LLM.
+    Stores deterministic extraction results, one row per processing
+    attempt (append-only). Raw business data is never sent to the LLM.
 ==============================================================*/
 CREATE TABLE BusinessSignals (
-    -- 1:1 relationship with Jobs
-    JobId UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+    -- Surrogate key: makes each attempt's row unique so a reprocess
+    -- of the same JobId cannot collide.
+    Id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
 
-    -- Serialized BusinessSignalsV1 DTO
-    -- Represents deterministic structured signals
+    -- Non-unique FK to the owning job (1:N — one row per attempt).
+    JobId UNIQUEIDENTIFIER NOT NULL,
+
+    -- 1-based attempt number for this job (audit/debug aid).
+    Attempt INT NOT NULL CONSTRAINT DF_BusinessSignals_Attempt DEFAULT (1),
+
+    -- Serialized BusinessSignalsV1 DTO (deterministic structured signals)
     SignalsJson NVARCHAR(MAX) NOT NULL,
 
     -- Timestamp when signals were generated
@@ -97,25 +116,29 @@ CREATE TABLE BusinessSignals (
         ON DELETE CASCADE
 );
 
--- Enables signal generation time analytics
-CREATE INDEX IX_BusinessSignals_GeneratedAt
-    ON BusinessSignals(GeneratedAt);
-
+-- "Latest signals for a job" reads + per-job attempt history
+CREATE INDEX IX_BusinessSignals_JobId_GeneratedAt
+    ON BusinessSignals(JobId, GeneratedAt DESC);
 
 
 /*==============================================================
   TABLE: BusinessInsights
   -------------------------------------------------------------
   Purpose:
-    Stores AI reasoning output and audit metadata.
-    Represents the "intelligence layer" of the system.
+    Stores AI reasoning output and audit metadata, one row per
+    processing attempt (append-only).
 ==============================================================*/
 CREATE TABLE BusinessInsights (
-    -- 1:1 relationship with Jobs
-    JobId UNIQUEIDENTIFIER NOT NULL PRIMARY KEY,
+    -- Surrogate key: unique per attempt (see BusinessSignals rationale).
+    Id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
 
-    -- Structured BusinessInsightsV1 DTO
-    -- Clean, validated output returned to API/UI
+    -- Non-unique FK to the owning job (1:N — one row per attempt).
+    JobId UNIQUEIDENTIFIER NOT NULL,
+
+    -- 1-based attempt number for this job (audit/debug aid).
+    Attempt INT NOT NULL CONSTRAINT DF_BusinessInsights_Attempt DEFAULT (1),
+
+    -- Structured BusinessInsightsV1 DTO (clean, validated output for API/UI)
     InsightsJson NVARCHAR(MAX) NOT NULL,
 
     -- Summary used for LLM reasoning (compressed signal view)
@@ -127,20 +150,11 @@ CREATE TABLE BusinessInsights (
     -- Timestamp when AI reasoning completed
     GeneratedAt DATETIMEOFFSET NOT NULL,
 
-    -----------------------------------------------------------
     -- Governance & Observability
-    -----------------------------------------------------------
-
-    -- Manual prompt versioning (e.g., v1, v1.1)
     PromptVersion NVARCHAR(20) NULL,
-
-    -- Model deployment name (e.g., gpt-4o-mini-prod)
     ModelDeployment NVARCHAR(100) NULL,
 
-    -----------------------------------------------------------
     -- Cost Tracking
-    -----------------------------------------------------------
-
     InputTokens INT NULL,
     OutputTokens INT NULL,
     TotalTokens INT NULL,
@@ -151,6 +165,6 @@ CREATE TABLE BusinessInsights (
         ON DELETE CASCADE
 );
 
--- Enables AI execution reporting and cost analysis
-CREATE INDEX IX_BusinessInsights_GeneratedAt
-    ON BusinessInsights(GeneratedAt);
+-- "Latest insights for a job" reads (GET /jobs/{id}/insights) + attempt history
+CREATE INDEX IX_BusinessInsights_JobId_GeneratedAt
+    ON BusinessInsights(JobId, GeneratedAt DESC);
