@@ -1,5 +1,6 @@
 using Azure;
 using Azure.AI.OpenAI;
+using Azure.Identity;
 using Contracts.Insights;
 using Contracts.Invocation;
 using Contracts.Signals;
@@ -60,19 +61,31 @@ public class Program
 
                 services.AddSingleton<InsightSignalSummarizer>();
 
-                // Create and register ChatClient for Azure OpenAI
+                // Shared Entra credential for all resource access (OpenAI, Blob).
+                // In Azure, binds to the user-assigned managed identity by client ID
+                // (set ManagedIdentityClientId in app settings). Locally, when that
+                // setting is absent, DefaultAzureCredential falls back to developer
+                // sign-in (az login / Visual Studio / VS Code). No keys in config.
+                var managedIdentityClientId = configuration["ManagedIdentityClientId"];
+
+                var credentialOptions = new DefaultAzureCredentialOptions();
+                if (!string.IsNullOrWhiteSpace(managedIdentityClientId))
+                {
+                    credentialOptions.ManagedIdentityClientId = managedIdentityClientId;
+                }
+
+                var credential = new DefaultAzureCredential(credentialOptions);
+
+                // Create and register ChatClient for Azure OpenAI (Entra auth)
                 var endpoint = configuration["AzureOpenAI:Endpoint"]
                     ?? throw new InvalidOperationException("Missing OpenAI endpoint");
-
-                var apiKey = configuration["AzureOpenAI:ApiKey"]
-                    ?? throw new InvalidOperationException("Missing OpenAI API key");
 
                 var deploymentName = configuration["AzureOpenAI:DeploymentName"]
                     ?? throw new InvalidOperationException("Missing deployment name");
 
                 var azureClient = new AzureOpenAIClient(
                     new Uri(endpoint),
-                    new AzureKeyCredential(apiKey));
+                    credential);
 
                 var chatClient = azureClient.GetChatClient(deploymentName);
 
@@ -123,17 +136,19 @@ public class Program
                 // ------------------------------------------------------------
                 // Blob Infrastructure
                 // ------------------------------------------------------------
-                var blobConnection =
-                    configuration["BlobConnectionString"]
+                var blobServiceUri =
+                    configuration["BlobServiceUri"]
                     ?? throw new InvalidOperationException(
-                        "BlobConnectionString is not configured.");
+                        "BlobServiceUri is not configured.");
 
                 services.AddSingleton<BlobFileReader>(sp =>
-                    new BlobFileReader(blobConnection));
+                    new BlobFileReader(new Uri(blobServiceUri), credential));
 
                 // ------------------------------------------------------------
                 // Database Infrastructure
                 // ------------------------------------------------------------
+                // SQL uses Entra auth via the connection string
+                // (Authentication=Active Directory Default) — no SQL credentials.
                 var sqlConnection =
                     configuration["SqlConnectionString"]
                     ?? throw new InvalidOperationException(

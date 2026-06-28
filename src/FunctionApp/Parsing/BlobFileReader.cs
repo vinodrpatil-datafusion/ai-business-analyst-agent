@@ -1,4 +1,5 @@
-﻿using Azure.Storage.Blobs;
+﻿using Azure.Core;
+using Azure.Storage.Blobs;
 using System.Text;
 
 namespace FunctionApp.Parsing;
@@ -6,14 +7,16 @@ namespace FunctionApp.Parsing;
 /// <summary>
 /// Lightweight helper to read files from Azure Blob Storage.
 /// Keeps file access out of agents and functions.
+/// Authenticates with an Entra token credential (Managed Identity in Azure,
+/// developer sign-in locally) rather than a connection string or key.
 /// </summary>
 public sealed class BlobFileReader
 {
     private readonly BlobServiceClient _blobServiceClient;
 
-    public BlobFileReader(string connectionString)
+    public BlobFileReader(Uri serviceUri, TokenCredential credential)
     {
-        _blobServiceClient = new BlobServiceClient(connectionString);
+        _blobServiceClient = new BlobServiceClient(serviceUri, credential);
     }
 
     public async Task<string> ReadTextAsync(
