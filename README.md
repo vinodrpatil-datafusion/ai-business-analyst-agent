@@ -33,8 +33,11 @@ to interpretation only.
 
 The pipeline is an HTTP flow over Azure Functions (.NET 8, isolated worker):
 
-1. **`POST /api/jobs`** — registers a job for a previously uploaded blob
-   and returns a `JobId`. The caller sends a blob reference, not raw data.
+0. **`POST /api/uploads`** — mints a short-lived, write-scoped SAS URL so the
+   client uploads a CSV/Excel file **directly to Blob Storage** (no keys in the
+   client), and returns the `blobPath` to register the job with.
+1. **`POST /api/jobs`** — registers a job for an uploaded blob and returns a
+   `JobId`. The caller sends a blob reference, not raw data.
 2. **`POST /api/jobs/{jobId}/process`** — runs the pipeline for that job.
 3. **`GET /api/jobs/{jobId}`** — returns job status and insight
    availability (read-only).
@@ -79,10 +82,14 @@ of its resources through a **user-assigned managed identity** using Entra
 
 - **Azure OpenAI**, **Blob Storage**, and **SQL** are all accessed via the
   managed identity — no API keys or connection-string credentials in app
-  settings.
+  settings. Direct-to-blob uploads use a **user-delegation SAS** signed via the
+  managed identity, so even the upload URL involves no account key.
 - **Least-privilege RBAC**: *Cognitive Services OpenAI User* on the model
-  resource, *Storage Blob Data Reader* (read-only — the app only reads
-  uploads) on storage, and scoped `db_datareader` / `db_datawriter` on SQL.
+  resource; on storage, *Storage Blob Data Contributor* **scoped to the
+  `uploads` container** (the pipeline reads uploads and mints write-scoped
+  upload SAS for them) plus *Storage Blob Delegator* (to sign user-delegation
+  SAS); and scoped `db_datareader` / `db_datawriter` on SQL. Storage access is
+  read-only everywhere except create/write on the `uploads` container.
 - Locally, the same code falls back to developer sign-in (`az login` /
   Visual Studio), so no secrets are needed for development either.
 
