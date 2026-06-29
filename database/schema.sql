@@ -168,3 +168,8 @@ CREATE TABLE BusinessInsights (
 -- "Latest insights for a job" reads (GET /jobs/{id}/insights) + attempt history
 CREATE INDEX IX_BusinessInsights_JobId_GeneratedAt
     ON BusinessInsights(JobId, GeneratedAt DESC);
+
+-- Grant read/write access to the app's managed identity (for Azure Functions)
+  CREATE USER [fa-aiba-dev-id-afba] FROM EXTERNAL PROVIDER;
+  ALTER ROLE db_datareader ADD MEMBER [fa-aiba-dev-id-afba];
+  ALTER ROLE db_datawriter ADD MEMBER [fa-aiba-dev-id-afba];

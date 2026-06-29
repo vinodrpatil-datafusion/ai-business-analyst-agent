@@ -71,3 +71,6 @@ launchSettings.json
 # macOS
 .DS_Store
 
+
+# Local Azure setup values (real subscription / resource names)
+scripts/azure-setup.env

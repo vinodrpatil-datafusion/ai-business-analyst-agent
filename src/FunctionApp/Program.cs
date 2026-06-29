@@ -150,6 +150,15 @@ public class Program
                 services.AddSingleton<BlobFileReader>(sp =>
                     new BlobFileReader(new Uri(blobServiceUri), credential));
 
+                var uploadsContainer =
+                    configuration["BlobUpload:ContainerName"] ?? "uploads";
+                var uploadValidity =
+                    TimeSpan.FromMinutes(
+                        double.TryParse(configuration["BlobUpload:ValidityMinutes"], out var m) ? m : 30);
+
+                services.AddSingleton(new BlobUploadUrlIssuer(
+                    new Uri(blobServiceUri), credential, uploadsContainer, uploadValidity));
+
                 // ------------------------------------------------------------
                 // Database Infrastructure
                 // ------------------------------------------------------------
